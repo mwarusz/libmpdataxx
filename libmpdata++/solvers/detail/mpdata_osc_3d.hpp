@@ -99,6 +99,47 @@ namespace libmpdataxx
               if (!opts::isset(ct_params_t::opts, opts::fct) && iter != (this->n_iters - 1))
                 this->xchng_vctr_nrml(this->GC_corr(iter), this->i, this->j, this->k);
 
+              if (opts::isset(ct_params_t::opts, opts::amz))
+              {
+                this->GC_amz()[0](this->im+h, this->j, this->k) = 
+                  formulae::mpdata::antidiff_corr<ct_params_t::opts, 0>(
+                    this->mem->psi[e][this->n[e]], 
+                    this->GC_unco(iter),
+                    this->mem->dGC_dt,
+                    this->mem->dGC_dtt,
+                    this->GC_corr(iter),
+                    *this->mem->G,
+                    this->im,
+                    this->j,
+                    this->k
+                  );
+
+                this->GC_amz()[1](this->i, this->jm+h, this->k) = 
+                  formulae::mpdata::antidiff_corr<ct_params_t::opts, 1>(
+                    this->mem->psi[e][this->n[e]], 
+                    this->GC_unco(iter),
+                    this->mem->dGC_dt,
+                    this->mem->dGC_dtt,
+                    this->GC_corr(iter),
+                    *this->mem->G,
+                    this->jm,
+                    this->k,
+                    this->i
+                  );
+                
+                this->GC_amz()[2](this->i, this->j, this->km+h) = 
+                  formulae::mpdata::antidiff_corr<ct_params_t::opts, 2>(
+                    this->mem->psi[e][this->n[e]], 
+                    this->GC_unco(iter),
+                    this->mem->dGC_dt,
+                    this->mem->dGC_dtt,
+                    this->GC_corr(iter),
+                    *this->mem->G,
+                    this->km,
+                    this->i,
+                    this->j
+                  );
+              }
 	      this->fct_adjust_antidiff(e, iter);
 
 	      // TODO: shouldn't the above halo-filling be repeated here?
@@ -155,6 +196,46 @@ namespace libmpdataxx
 	}
 
 	public:
+
+	static void alloc(typename parent_t::mem_t *mem, const int &n_iters)
+        {
+	  parent_t::alloc(mem, n_iters);
+          // fully third order MPDATA needs first and second time derivatives of Courant field
+          if (opts::isset(ct_params_t::opts, opts::amz))
+          {
+            mem->dGC_dt.push_back(mem->old(new typename parent_t::arr_t( 
+              parent_t::rng_vctr(mem->grid_size[0]), 
+              parent_t::rng_sclr(mem->grid_size[1]),
+              parent_t::rng_sclr(mem->grid_size[2]) 
+            )));
+            mem->dGC_dt.push_back(mem->old(new typename parent_t::arr_t( 
+              parent_t::rng_sclr(mem->grid_size[0]), 
+              parent_t::rng_vctr(mem->grid_size[1]),
+              parent_t::rng_sclr(mem->grid_size[2]) 
+            )));
+            mem->dGC_dt.push_back(mem->old(new typename parent_t::arr_t( 
+              parent_t::rng_sclr(mem->grid_size[0]), 
+              parent_t::rng_sclr(mem->grid_size[1]),
+              parent_t::rng_vctr(mem->grid_size[2])
+            )));
+            
+            mem->dGC_dtt.push_back(mem->old(new typename parent_t::arr_t( 
+              parent_t::rng_vctr(mem->grid_size[0]), 
+              parent_t::rng_sclr(mem->grid_size[1]),
+              parent_t::rng_sclr(mem->grid_size[2]) 
+            )));
+            mem->dGC_dtt.push_back(mem->old(new typename parent_t::arr_t( 
+              parent_t::rng_sclr(mem->grid_size[0]), 
+              parent_t::rng_vctr(mem->grid_size[1]),
+              parent_t::rng_sclr(mem->grid_size[2]) 
+            )));
+            mem->dGC_dtt.push_back(mem->old(new typename parent_t::arr_t( 
+              parent_t::rng_sclr(mem->grid_size[0]), 
+              parent_t::rng_sclr(mem->grid_size[1]), 
+              parent_t::rng_vctr(mem->grid_size[2])
+            )));
+          }
+        }
 
 	// ctor
 	mpdata_osc(

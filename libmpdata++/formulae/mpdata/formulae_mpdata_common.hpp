@@ -29,6 +29,7 @@ namespace libmpdataxx
       {
         return (
           opts::isset(opts, opts::tot) || // see psi 2-nd derivatives in eq. (36) in PKS & LGM 1998
+          opts::isset(opts, opts::amz) ||
           opts::isset(opts, opts::dfl)    // see +3/2 in eq. (30) in PKS & LGM 1998
         ) ? 2 : 1; 
       }

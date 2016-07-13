@@ -9,6 +9,7 @@
 #include <libmpdata++/formulae/mpdata/formulae_mpdata_common.hpp>
 #include <libmpdata++/formulae/mpdata/formulae_mpdata_common_3d.hpp>
 #include <libmpdata++/formulae/mpdata/formulae_mpdata_hot_3d.hpp>
+#include <libmpdata++/formulae/mpdata/formulae_mpdata_dfl_3d.hpp>
 #include <boost/preprocessor/punctuation/comma.hpp>
 
 namespace libmpdataxx
@@ -188,19 +189,57 @@ namespace libmpdataxx
       ) return_macro(,
           // second order terms
           abs(GC[dim](pi<dim>(i+h, j, k)))
-        * (1 - abs(GC[dim](pi<dim>(i+h, j, k))) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j, k))
+        * (1 - abs(GC[dim](pi<dim>(i+h, j, k))) / G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j, k))
         * A<opts BOOST_PP_COMMA() dim>(psi, i, j, k)
         - GC[dim](pi<dim>(i+h, j, k))
         * (
-            GC_bar1<dim>(GC[dim+1], i, j, k)
-          / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j, k)
+          GC1_bar_xy<dim>(GC[dim+1], i, j, k)
+          / G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j, k)
           * B1<opts BOOST_PP_COMMA() dim>(psi, i, j, k)
-          + GC_bar2<dim>(GC[dim-1], i, j, k)
-          / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j, k)
+          + GC2_bar_xz<dim>(GC[dim-1], i, j, k)
+          / G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j, k)
           * B2<opts BOOST_PP_COMMA() dim>(psi, i, j, k)
           )
           // third order terms
         + HOT<opts BOOST_PP_COMMA() dim>(psi, GC, G, i, j, k)
+        + DFL<opts BOOST_PP_COMMA() dim>(psi, GC, G, i, j, k)
+      )
+
+      template<opts_t opts, int dim, class arr_3d_t>
+      inline auto antidiff_corr( // antidiffusive velocity correction
+        const arr_3d_t &psi, 
+        const arrvec_t<arr_3d_t> &GC,
+        const arrvec_t<arr_3d_t> &dGC_dt,
+        const arrvec_t<arr_3d_t> &dGC_dtt,
+        const arrvec_t<arr_3d_t> &GC_corr,
+        const arr_3d_t &G, 
+        const rng_t &i, 
+        const rng_t &j,
+        const rng_t &k
+      ) return_macro(,
+        GC_corr[dim](pi<dim>(i+h, j, k))
+
+        + aux<opts BOOST_PP_COMMA() dim>(psi, GC_corr[dim], i, j, k)
+        
+        //dimensional terms
+        - 1.0 / 24 *
+        (
+            4 * GC[dim](pi<dim>(i+h, j, k)) * dpsi_dxx<opts BOOST_PP_COMMA() dim>(psi, i, j, k)
+          + 2 * dpsi_dx<opts BOOST_PP_COMMA() dim>(psi, i, j, k) * dGC0_dx<dim>(GC[dim], i, j, k)
+          + 1 * dGC0_dxx<opts BOOST_PP_COMMA() dim>(psi, GC[dim], i, j, k)
+        )
+        
+        // mixed terms
+        + 0.5 * abs(GC[dim](pi<dim>(i+h, j, k))) * grad_gdiv<opts BOOST_PP_COMMA() dim>(psi, GC, G, i, j, k)
+        
+        // temporal terms
+        + 1.0 / 24 *
+        (
+            - 8 * GC[dim](pi<dim>(i+h, j, k)) *  gdiv_gdiv<opts BOOST_PP_COMMA() dim>(psi, GC, G, i, j, k)
+            //+ 1 * dGC0_dtt<opts BOOST_PP_COMMA() dim>(psi, dGC_dtt[dim], i, j, k)
+            //+ 2 * GC[dim](pi<dim>(i+h, j, k)) *  gdiv<opts BOOST_PP_COMMA() dim>(psi, dGC_dt, G, i, j, k)
+            //- 2 * dGC_dt[dim](pi<dim>(i+h, j,k )) * gdiv<opts BOOST_PP_COMMA() dim>(psi, GC, G, i, j, k)
+        )
       )
     } // namespace mpdata
   } // namespace formulae

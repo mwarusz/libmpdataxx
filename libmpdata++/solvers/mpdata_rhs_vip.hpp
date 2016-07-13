@@ -31,24 +31,25 @@ namespace libmpdataxx
       protected:
       
       using parent_t = detail::mpdata_rhs_vip_common<ct_params_t>;
+      using arr_t = typename parent_t::arr_t;
 
       // member fields
       const rng_t im;
 
-      void fill_stash() final
+      void fill_stash(arrvec_t<arr_t> &dst) final
       {
-        this->fill_stash_helper(0, ix::vip_i);
+        this->fill_stash_helper(dst[0], ix::vip_i);
       }
 
-      void interpolate_in_space() final
+      void interpolate_in_space(arrvec_t<arr_t> &dst, const arrvec_t<arr_t> &src) final
       {
         using namespace libmpdataxx::arakawa_c;
 
 	if (!this->mem->G)
 	{
-	  this->mem->GC[0](im + h) = this->dt / this->di * .5 * (
-	    this->stash[0](im    ) + 
-	    this->stash[0](im + 1)
+	  this->dst[0](im + h) = this->dt / this->di * .5 * (
+	    src[0](im    ) + 
+	    src[0](im + 1)
 	  );
 	} 
 	else
@@ -57,10 +58,10 @@ namespace libmpdataxx
 	}
       }
 
-      void extrapolate_in_time() final
+      void extrapolate_in_time(arrvec_t<arr_t> &dst, const arrvec_t<arr_t> &src) final
       {
-	this->extrp(0, ix::vip_i);     
-	this->xchng_sclr(this->stash[0]);      // filling halos 
+	this->extrp(dst[0], src[0], ix::vip_i);     
+	this->xchng_sclr(dst[0]);      // filling halos 
       }
 
       public:
@@ -93,19 +94,21 @@ namespace libmpdataxx
       protected:
 
       using parent_t = detail::mpdata_rhs_vip_common<ct_params_t>;
+      using arr_t = typename parent_t::arr_t;
 
       // member fields
       const rng_t im, jm;
 
-      void fill_stash() final 
+      void fill_stash(arrvec_t<arr_t> &dst) final
       {
-        this->fill_stash_helper(0, ix::vip_i);
-        this->fill_stash_helper(1, ix::vip_j);
+        this->fill_stash_helper(dst[0], ix::vip_i);
+        this->fill_stash_helper(dst[1], ix::vip_j);
       }
 
       template<int d, class arr_t> 
       void intrp(
-	const arr_t psi,
+	const arr_t &dst,
+	const arr_t &src,
 	const rng_t &i, 
 	const rng_t &j, 
 	const typename ct_params_t::real_t &di 
@@ -116,39 +119,39 @@ namespace libmpdataxx
   
 	if (!this->mem->G)
 	{
-	  this->mem->GC[d](pi<d>(i+h,j)) = this->dt / di * .5 * (
-	    psi(pi<d>(i,    j)) + 
-	    psi(pi<d>(i + 1,j))
+	  dst(pi<d>(i+h,j)) = this->dt / di * .5 * (
+	    src(pi<d>(i,    j)) + 
+	    src(pi<d>(i + 1,j))
 	  );
 	} 
 	else
 	{ 
-	  this->mem->GC[d](pi<d>(i+h,j)) = this->dt / di * .5 * (
-	    (*this->mem->G)(pi<d>(i,    j)) * psi(pi<d>(i,    j)) + 
-	    (*this->mem->G)(pi<d>(i + 1,j)) * psi(pi<d>(i + 1,j))
+	  dst(pi<d>(i+h,j)) = this->dt / di * .5 * (
+	    (*this->mem->G)(pi<d>(i,    j)) * src(pi<d>(i,    j)) + 
+	    (*this->mem->G)(pi<d>(i + 1,j)) * src(pi<d>(i + 1,j))
 	  );
 	}
       }  
 
-      void interpolate_in_space() final
+      void interpolate_in_space(arrvec_t<arr_t> &dst, const arrvec_t<arr_t> &src) final
       {
         using namespace libmpdataxx::arakawa_c;
 
-	intrp<0>(this->stash[0], im, this->j^this->halo, this->di);
-	intrp<1>(this->stash[1], jm, this->i^this->halo, this->dj);
-        this->xchng_vctr_alng(this->mem->GC);
+	intrp<0>(dst[0], src[0], im, this->j^this->halo, this->di);
+	intrp<1>(dst[1], src[1], jm, this->i^this->halo, this->dj);
+        this->xchng_vctr_alng(dst);
         auto ex = this->halo - 1;
-        this->xchng_vctr_nrml(this->mem->GC, this->i^ex, this->j^ex);
+        this->xchng_vctr_nrml(dst, this->i^ex, this->j^ex);
       }
 
-      void extrapolate_in_time() final
+      void extrapolate_in_time(arrvec_t<arr_t> &dst, const arrvec_t<arr_t> &src) final
       {
         using namespace libmpdataxx::arakawa_c; 
 
-	this->extrp(0, ix::vip_i);     
-	this->xchng_sclr(this->stash[0], this->i^this->halo, this->j^this->halo);      // filling halos 
-	this->extrp(1, ix::vip_j);
-	this->xchng_sclr(this->stash[1], this->i^this->halo, this->j^this->halo);      // filling halos 
+	this->extrp(dst[0], src[0], ix::vip_i);     
+	this->xchng_sclr(dst[0], this->i^this->halo, this->j^this->halo);      // filling halos 
+	this->extrp(dst[1], src[1], ix::vip_j);
+	this->xchng_sclr(dst[1], this->i^this->halo, this->j^this->halo);      // filling halos 
       }
 
       public:
@@ -206,20 +209,22 @@ namespace libmpdataxx
       protected:
       
       using parent_t = detail::mpdata_rhs_vip_common<ct_params_t>;
+      using arr_t = typename parent_t::arr_t;
 
       // member fields
       const rng_t im, jm, km;
 
-      void fill_stash() final 
+      void fill_stash(arrvec_t<arr_t> &dst) final
       {
-        this->fill_stash_helper(0, ix::vip_i);
-        this->fill_stash_helper(1, ix::vip_j);
-        this->fill_stash_helper(2, ix::vip_k);
+        this->fill_stash_helper(dst[0], ix::vip_i);
+        this->fill_stash_helper(dst[1], ix::vip_j);
+        this->fill_stash_helper(dst[2], ix::vip_k);
       }
 
       template<int d, class arr_t> 
       void intrp(
-	const arr_t psi,
+	const arr_t &dst,
+	const arr_t &src,
 	const rng_t &i, 
 	const rng_t &j, 
 	const rng_t &k, 
@@ -231,9 +236,9 @@ namespace libmpdataxx
   
 	if (!this->mem->G)
 	{
-	  this->mem->GC[d](pi<d>(i+h, j, k)) = this->dt / di * .5 * (
-	    psi(pi<d>(i,     j, k)) + 
-	    psi(pi<d>(i + 1, j, k))
+	  dst(pi<d>(i+h, j, k)) = this->dt / di * .5 * (
+	    src(pi<d>(i,     j, k)) + 
+	    src(pi<d>(i + 1, j, k))
 	  );
 	} 
 	else
@@ -242,34 +247,34 @@ namespace libmpdataxx
 	}
       }  
 
-      void interpolate_in_space() final
+      void interpolate_in_space(arrvec_t<arr_t> &dst, const arrvec_t<arr_t> &src) final
       {
         using namespace libmpdataxx::arakawa_c;
 
-	intrp<0>(this->stash[0], im, this->j^this->halo, this->k^this->halo, this->di);
-	intrp<1>(this->stash[1], jm, this->k^this->halo, this->i^this->halo, this->dj);
-	intrp<2>(this->stash[2], km, this->i^this->halo, this->j^this->halo, this->dk);
-        this->xchng_vctr_alng(this->mem->GC);
+	intrp<0>(dst[0], src[0], im, this->j^this->halo, this->k^this->halo, this->di);
+	intrp<1>(dst[1], src[1], jm, this->k^this->halo, this->i^this->halo, this->dj);
+	intrp<2>(dst[2], src[2], km, this->i^this->halo, this->j^this->halo, this->dk);
+        this->xchng_vctr_alng(dst);
         auto ex = this->halo - 1;
-        this->xchng_vctr_nrml(this->mem->GC, this->i^ex, this->j^ex, this->k^ex);
+        this->xchng_vctr_nrml(dst, this->i^ex, this->j^ex, this->k^ex);
       }
 
-      void extrapolate_in_time() final
+      void extrapolate_in_time(arrvec_t<arr_t> &dst, const arrvec_t<arr_t> &src) final
       {
         using namespace libmpdataxx::arakawa_c; 
 
-	this->extrp(0, ix::vip_i);     
-	this->xchng_sclr(this->stash[0],
+	this->extrp(dst[0], src[0], ix::vip_i);     
+	this->xchng_sclr(dst[0],
                          this->i^this->halo,
                          this->j^this->halo,
                          this->k^this->halo);      // filling halos 
-	this->extrp(1, ix::vip_j);
-	this->xchng_sclr(this->stash[1],
+	this->extrp(dst[1], src[1], ix::vip_j);
+	this->xchng_sclr(dst[1],
                          this->i^this->halo,
                          this->j^this->halo,
                          this->k^this->halo);      // filling halos 
-	this->extrp(2, ix::vip_k);
-	this->xchng_sclr(this->stash[2],
+	this->extrp(dst[2], src[2], ix::vip_k);
+	this->xchng_sclr(dst[2],
                          this->i^this->halo,
                          this->j^this->halo,
                          this->k^this->halo);      // filling halos 

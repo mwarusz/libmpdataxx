@@ -26,8 +26,8 @@ namespace libmpdataxx
         const rng_t &j
       ) return_macro(,
         (
-          3 * GC(pi<dim>(i+h, j)) * abs(GC(pi<dim>(i+h, j))) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)
-          - 2 * pow(GC(pi<dim>(i+h, j)), 3) / pow(G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j), 2)
+          3 * GC(pi<dim>(i+h, j)) * abs(GC(pi<dim>(i+h, j))) / G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j)
+          - 2 * pow(GC(pi<dim>(i+h, j)), 3) / pow(G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j), 2)
           - GC(pi<dim>(i+h, j))
         ) / 3
       )
@@ -39,8 +39,8 @@ namespace libmpdataxx
         const rng_t &i,
         const rng_t &j
       ) return_macro(,
-        (abs(GC[dim](pi<dim>(i+h, j))) - 2 * pow(GC[dim](pi<dim>(i+h, j)), 2) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)) 
-         * GC_bar<dim>(GC[dim-1], i, j) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)
+        (abs(GC[dim](pi<dim>(i+h, j))) - 2 * pow(GC[dim](pi<dim>(i+h, j)), 2) / G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j)) 
+         * GC1_bar_xy<dim>(GC[dim-1], i, j) / G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j)
       )
 
       template<opts_t opts, int dim, class arr_2d_t>

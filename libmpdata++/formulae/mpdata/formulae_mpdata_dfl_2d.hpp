@@ -37,12 +37,12 @@ namespace libmpdataxx
         const arrvec_t<arr_2d_t> &GC,      
         const arr_2d_t &G,
         const rng_t &i,
-        const rng_t &j,         //has not been derived for tot yet
-        typename std::enable_if<!opts::isset(opts, opts::tot) && opts::isset(opts, opts::dfl) && !opts::isset(opts, opts::iga)>::type* = 0 
+        const rng_t &j,
+        typename std::enable_if<opts::isset(opts, opts::dfl) && !opts::isset(opts, opts::iga)>::type* = 0 
       ) return_macro(,
         - 0.25 * GC[dim](pi<dim>(i+h, j)) 
         /
-        G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j) 
+        G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j) 
         * 
         (
           (
@@ -65,12 +65,12 @@ namespace libmpdataxx
         const arrvec_t<arr_2d_t> &GC,
         const arr_2d_t &G,
         const rng_t &i,
-        const rng_t &j,    //has not been derived for tot yet
-        typename std::enable_if<!opts::isset(opts, opts::tot) && opts::isset(opts, opts::dfl) && opts::isset(opts, opts::iga)>::type* = 0 
+        const rng_t &j,
+        typename std::enable_if<opts::isset(opts, opts::dfl) && opts::isset(opts, opts::iga)>::type* = 0 
       ) return_macro(,
         - 0.25 * GC[dim](pi<dim>(i+h, j)) 
         /
-        G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j) 
+        G_bar_x<opts BOOST_PP_COMMA() dim>(G, i, j) 
         * 
         (
           (

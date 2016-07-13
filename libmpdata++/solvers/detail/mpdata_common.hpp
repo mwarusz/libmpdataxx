@@ -52,11 +52,16 @@ namespace libmpdataxx
 	    ? *tmp[0]    // odd iters
 	    : *tmp[1];   // even iters
 	}
+        
+        GC_t &GC_amz()
+	{
+	  return *tmp[1];
+	}
 
         virtual GC_t &GC(int iter)
 	{
 	  if (iter == 0) return this->mem->GC;
-	  return GC_corr(iter);
+	  return opts::isset(ct_params_t::opts, opts::amz) ? GC_amz() : GC_corr(iter);
 	}
 
 	// for Flux-Corrected Transport 
@@ -66,7 +71,7 @@ namespace libmpdataxx
         //  
         static int n_tmp(const int &n_iters)
         {
-          return n_iters > 2 ? 2 : 1; 
+          return n_iters > 2 || opts::isset(ct_params_t::opts, opts::amz) ? 2 : 1; 
         }
 
         public:
