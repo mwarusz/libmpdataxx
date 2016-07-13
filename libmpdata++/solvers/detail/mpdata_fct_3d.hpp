@@ -57,7 +57,7 @@ namespace libmpdataxx
 	void fct_adjust_antidiff(int e, int iter)
 	{
 	  const auto psi = this->mem->psi[e][this->n[e]];
-	  auto &GC_corr = parent_t::GC_corr(iter);
+	  auto &GC_corr = opts::isset(ct_params_t::opts, opts::amz) ? this->GC_amz() : this->GC_corr(iter);
           const auto &G = *this->mem->G;
 	  const auto &im(this->im), &jm(this->jm), &km(this->km); // calculating once for (i/j/k)-1/2 and (i/j/k)+1/2
 
@@ -69,7 +69,7 @@ namespace libmpdataxx
 
 	  // fill halos -> mpdata works with halo=1, we need halo=2
           this->xchng_vctr_alng(GC_corr);
-          this->xchng_vctr_nrml(this->GC_corr(iter), this->i, this->j, this->k);
+          this->xchng_vctr_nrml(GC_corr, this->i, this->j, this->k);
           
           // calculation of fluxes for betas denominators
           if (opts::isset(ct_params_t::opts, opts::iga))
