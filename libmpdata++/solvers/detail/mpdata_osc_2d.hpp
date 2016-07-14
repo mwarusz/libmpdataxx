@@ -44,14 +44,22 @@ namespace libmpdataxx
 	  if (opts::isset(ct_params_t::opts, opts::nug))
             this->xchng_sclr(*this->mem->G, this->i^this->halo, this->j^this->halo);
           
+          if (opts::isset(ct_params_t::opts, opts::amz))
+          {
+            this->mem->dGC_dt[0](this->i+h, this->j) = 0;
+            this->mem->dGC_dtt[0](this->i+h, this->j) = 0;
+            this->mem->dGC_dt[1](this->i, this->j+h) = 0;
+            this->mem->dGC_dtt[1](this->i, this->j+h) = 0;
+          }
+
           // filling Y halos for GC_x, and X halos for GC_y
-          this->xchng_vctr_nrml(this->mem->GC, this->i, this->j);
+          auto ex = this->halo-1;
+          this->xchng_vctr_nrml(this->mem->GC, this->i^ex, this->j^ex);
 	} 
 
 	// method invoked by the solver
 	void advop(int e)
 	{
-          this->xchng_vctr_nrml(this->mem->GC, this->i^(this->halo-1), this->j^(this->halo-1));
 	  this->fct_init(e);
 
 	  for (int iter = 0; iter < this->n_iters; ++iter) 
