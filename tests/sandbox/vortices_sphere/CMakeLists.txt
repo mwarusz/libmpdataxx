@@ -1,0 +1,3 @@
+libmpdataxx_add_test(stationary)
+libmpdataxx_add_test(moving)
+libmpdataxx_add_test(solid_body)
