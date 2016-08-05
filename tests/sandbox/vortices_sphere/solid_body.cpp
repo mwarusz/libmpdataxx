@@ -31,7 +31,7 @@ void test(const std::string filename, int nlat)
   T dx = 2 * pi / (nlon - 1), dy = pi / nlat;
 
   T time = 12;
-  T dt = dx / (48 * 2 * pi);
+  T dt = dx / (64 * 2 * pi);
   int nt = time / dt;
 
   using slv_out_t = 
@@ -75,8 +75,9 @@ void test(const std::string filename, int nlat)
     decltype(run.advectee()) r(run.advectee().extent());
 
     r = acos(sin(y0) * sin(Y) + cos(y0) * cos(Y) * cos(X - x0));
-
-    run.advectee() = where(r <= 1.0 / 3, 500 * (1 + cos(3 * pi * r)), 0.);
+    
+    double rr = 5. * 1./ 3;
+    run.advectee() = where(r <= rr, 1000.0 / 4. * pow(1 + cos(pi * r / rr), 2), 0.);
     run.g_factor() = dx * dy * blitz::cos(Y);
     
     solution = run.advectee();
@@ -86,7 +87,7 @@ void test(const std::string filename, int nlat)
         + abs(- u0 * sin(X) * sin(a) * dt / dy );
     std::cout << "max Courant number: " << max(C) << std::endl;
 
-    run.advector(0) =   u0 * (cos(a) + tan(Y) * sin(a) * cos(X - 0.5 * dx)) * dt / dx * dx * dy * cos(Y);
+    run.advector(0) =   u0 * (cos(a) + tan(Y) * sin(a) * cos(X + 0.5 * dx)) * dt / dx * dx * dy * cos(Y);
 
     run.advector(1) = - u0 * sin(X) * sin(a) * dt / dy * dx * dy * cos(Y + 0.5 * dy);
   }
@@ -106,13 +107,13 @@ void test(const std::string filename, int nlat)
 int main()
 {
   {
-    enum { opts = opts::nug};
+    enum { opts = opts::nug | opts::iga | opts::amz};
     const int opts_iters = 2;
-    test<opts, opts_iters>("sb_zro_024_2", 24);
-    test<opts, opts_iters>("sb_zro_048_2", 48);
-    test<opts, opts_iters>("sb_zro_096_2", 96);
-    test<opts, opts_iters>("sb_zro_192_2", 192);
-    test<opts, opts_iters>("sb_zro_384_2", 384);
-    test<opts, opts_iters>("sb_zro_768_2", 768);
+    test<opts, opts_iters>("sb5_iga_amz_024_2", 24);
+    test<opts, opts_iters>("sb5_iga_amz_048_2", 48);
+    test<opts, opts_iters>("sb5_iga_amz_096_2", 96);
+    test<opts, opts_iters>("sb5_iga_amz_192_2", 192);
+    test<opts, opts_iters>("sb5_iga_amz_384_2", 384);
+    test<opts, opts_iters>("sb5_iga_amz_768_2", 768);
   }
 }
