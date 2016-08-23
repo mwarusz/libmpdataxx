@@ -79,6 +79,32 @@ namespace libmpdataxx
         tau[5](ijk) = vg[8](ijk);
       }
       
+      // Smagorinsky mixing coefficient
+      // 2D version
+      template <int nd, class arrvec_t, class ijk_t, class real_t>
+      inline auto calc_k_m(
+	const arrvec_t &tau,
+        const ijk_t&ijk,
+        const real_t C,
+        const real_t dlta,
+        typename std::enable_if<nd == 2>::type* = 0
+      ) return_macro(,
+	  pow(C * dlta, 2) / sqrt(2) * abs(tau[0](ijk) / 2 + tau[1](ijk) + tau[2](ijk) / 2)
+      )
+      
+      // 3D version
+      template <int nd, class arrvec_t, class ijk_t, class real_t>
+      inline auto calc_k_m(
+	const arrvec_t &tau,
+        const ijk_t&ijk,
+        const real_t C,
+        const real_t dlta,
+        typename std::enable_if<nd == 3>::type* = 0
+      ) return_macro(,
+	  pow(C * dlta, 2) / sqrt(2) *
+          abs(tau[0](ijk) / 2 + tau[1](ijk) + tau[2](ijk) + tau[3](ijk) / 2 + tau[4](ijk) + tau[5](ijk) / 2)
+      )
+      
       // calculate elements of stress tensor divergence
       // 2D version
       template <int nd, class arrvec_t, class ijk_t, class dijk_t>

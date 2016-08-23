@@ -25,7 +25,7 @@ void test(const std::string &dirname, double rey)
     enum { n_eqns = 3 };
     enum { rhs_scheme = solvers::trapez };
     enum { sgs_scheme = solvers::dns };
-    enum { stress_diff = solvers::pade };
+    enum { stress_diff = solvers::normal };
     enum { prs_scheme = solvers::cr };
     struct ix { enum {
       u, v, w,
