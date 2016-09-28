@@ -10,7 +10,6 @@
 #pragma once
 
 #include <libmpdata++/output/detail/output_common.hpp>
-#include <libmpdata++/output/detail/xdmf_writer.hpp>
 
 #include <boost/filesystem.hpp>
 
@@ -35,7 +34,7 @@ namespace libmpdataxx
       std::unique_ptr<H5::H5File> hdfp;
       std::map<int, H5::DataSet> vars;
       std::map<int, std::string> dim_names;
-      static constexpr auto const_name = "const.h5";
+      const std::string const_name = "const.h5";
 
       // HDF types of host data
       const H5::FloatType
@@ -146,8 +145,11 @@ namespace libmpdataxx
                 case 2:
                 {
                   // halos present -> data not contiguous -> looping over the major rank
-                  for (int i = 0; i < this->mem->grid_size[0]; ++i)
-                  {
+                  assert(this->mem->grid_size[0].stride() == 1);
+                  for (auto i  = this->mem->grid_size[0].first(); 
+                            i <= this->mem->grid_size[0].last(); 
+                            i += this->mem->grid_size[0].stride()
+                  ) {
                     offst[0] = i;
                     g_space.selectHyperslab(H5S_SELECT_SET, count.data(), offst.data());
                     g_set.write( &((*this->mem->G)(i,0)), flttype_solver, H5::DataSpace(parent_t::n_dims, count.data()), g_space);
@@ -157,10 +159,16 @@ namespace libmpdataxx
                 case 3:
                 {
                   // halos present -> data not contiguous -> looping over the major rank
-                  for (int i = 0; i < this->mem->grid_size[0]; ++i)
-                  {
-                    for (int j = 0; j < this->mem->grid_size[1]; ++j)
-                    {
+                  assert(this->mem->grid_size[0].stride() == 1);
+                  for (auto i  = this->mem->grid_size[0].first(); 
+                            i <= this->mem->grid_size[0].last(); 
+                            i += this->mem->grid_size[0].stride()
+                  ) {
+                    assert(this->mem->grid_size[1].stride() == 1);
+                    for (auto j  = this->mem->grid_size[1].first(); 
+                              j <= this->mem->grid_size[1].last(); 
+                              j += this->mem->grid_size[1].stride()
+                    ) {
                       offst[0] = i;
                       offst[1] = j;
                       g_space.selectHyperslab(H5S_SELECT_SET, count.data(), offst.data());
@@ -221,8 +229,11 @@ namespace libmpdataxx
               case 2:
               {
                 // halos present -> data not contiguous -> looping over the major rank
-                for (int i = 0; i < this->mem->grid_size[0]; ++i)
-                {
+	        assert(this->mem->grid_size[0].stride() == 1);
+	        for (auto i  = this->mem->grid_size[0].first(); 
+                          i <= this->mem->grid_size[0].last(); 
+                          i += this->mem->grid_size[0].stride()
+                ) {
                   offst[0] = i;
                   space.selectHyperslab(H5S_SELECT_SET, count.data(), offst.data());
                   vars[v.first].write( &(this->mem->advectee(v.first)(i,0)), flttype_solver, H5::DataSpace(parent_t::n_dims, count.data()), space);
@@ -232,10 +243,16 @@ namespace libmpdataxx
               case 3:
               {
                 // halos present -> data not contiguous -> looping over the major rank
-                for (int i = 0; i < this->mem->grid_size[0]; ++i)
-                {
-                  for (int j = 0; j < this->mem->grid_size[1]; ++j)
-                  {
+	        assert(this->mem->grid_size[0].stride() == 1);
+	        for (auto i  = this->mem->grid_size[0].first(); 
+                          i <= this->mem->grid_size[0].last(); 
+                          i += this->mem->grid_size[0].stride()
+                ) {
+	          assert(this->mem->grid_size[1].stride() == 1);
+	          for (auto j  = this->mem->grid_size[1].first(); 
+                            j <= this->mem->grid_size[1].last(); 
+                            j += this->mem->grid_size[1].stride()
+                  ) {
                     offst[0] = i;
                     offst[1] = j;
                     space.selectHyperslab(H5S_SELECT_SET, count.data(), offst.data());
@@ -282,5 +299,5 @@ namespace libmpdataxx
           this->outvars[0].name = "psi";
       }
     };
-  }; // namespace output
-}; // namespace libmpdataxx
+  } // namespace output
+} // namespace libmpdataxx
