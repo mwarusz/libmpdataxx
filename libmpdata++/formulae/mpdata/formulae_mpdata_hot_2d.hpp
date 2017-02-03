@@ -44,6 +44,50 @@ namespace libmpdataxx
       )
 
       template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT_3_helper(
+        const arr_2d_t &GC,
+        const arr_2d_t &G,
+        const rng_t &i,
+        const rng_t &j
+      ) return_macro(,
+        (
+          6 * abs(GC(pi<dim>(i+h, j))) * pow(GC(pi<dim>(i+h, j)), 2) / pow(G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j), 2)
+          - 3 * pow2(GC(pi<dim>(i+h, j))) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)
+          - 3 * pow(GC(pi<dim>(i+h, j)), 4) / pow(G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j), 3)
+        ) / 2
+      )
+      
+      template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT_4_helper(
+        const arrvec_t<arr_2d_t> &GC,
+        const arr_2d_t &G,
+        const rng_t &i,
+        const rng_t &j
+      ) return_macro(,
+        3 * 
+        (abs(GC[dim](pi<dim>(i+h, j))) - pow(GC[dim](pi<dim>(i+h, j)), 2) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)) 
+         * GC[dim](pi<dim>(i+h, j)) * GC_bar<dim>(GC[dim-1], i, j)
+         / pow(G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j), 2)
+      )
+      
+      template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT_5_helper(
+        const arrvec_t<arr_2d_t> &GC,
+        const arr_2d_t &G,
+        const rng_t &i,
+        const rng_t &j
+      ) return_macro(,
+        3 *
+        (
+            3 * abs(GC_bar<dim>(GC[dim-1], i, j)) * pow2(GC[dim](pi<dim>(i+h, j))) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)
+          + 3 * pow(GC_bar<dim>(GC[dim-1], i, j), 2) * abs(GC[dim](pi<dim>(i+h, j))) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j)
+          - 2 * abs(GC_bar<dim>(GC[dim-1], i, j)) * abs(GC[dim](pi<dim>(i+h, j)))
+          - 9 * pow(GC_bar<dim>(GC[dim-1], i, j), 2) * pow(GC[dim](pi<dim>(i+h, j)), 2)
+              / pow(G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j), 2)
+        ) / G_at_half<opts BOOST_PP_COMMA() dim>(G, i, j) / 4
+      )
+
+      template<opts_t opts, int dim, class arr_2d_t>
       inline auto HOT_1( // positive sign signal
         const arr_2d_t &psi,
         const rng_t &i,
@@ -127,6 +171,43 @@ namespace libmpdataxx
 	(1 + 1 + 1 + 1)
       )
 
+      template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT_3( // inf. gauge option
+        const arr_2d_t &psi,
+        const rng_t &i,
+        const rng_t &j
+      ) return_macro(,
+	( psi(pi<dim>(i+2, j)) - 3 * psi(pi<dim>(i+1, j)) + 3 * psi(pi<dim>(i, j)) - psi(pi<dim>(i-1, j)) )
+	/ //--------------------------------------------------------------------------------------
+	(1 + 1 + 1 + 1)
+      )
+      
+      // dpdxxy
+      template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT_4( // inf. gauge option
+        const arr_2d_t &psi,
+        const rng_t &i,
+        const rng_t &j
+      ) return_macro(,
+	(  psi(pi<dim>(i+2, j+1)) - psi(pi<dim>(i+1, j+1)) - psi(pi<dim>(i, j+1)) + psi(pi<dim>(i-1, j+1)) 
+	  -psi(pi<dim>(i+2, j-1)) + psi(pi<dim>(i+1, j-1)) + psi(pi<dim>(i, j-1)) - psi(pi<dim>(i-1, j-1)) )
+	/ //--------------------------------------------------------------------------------------
+	(1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)
+      )
+      
+      // dpdxyy
+      template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT_5( // inf. gauge option
+        const arr_2d_t &psi,
+        const rng_t &i,
+        const rng_t &j
+      ) return_macro(,
+	( psi(pi<dim>(i+1, j+1)) - 2 * psi(pi<dim>(i+1, j)) + psi(pi<dim>(i+1, j-1))
+         -psi(pi<dim>(i  , j+1)) + 2 * psi(pi<dim>(i  , j)) - psi(pi<dim>(i  , j-1)) )
+	/ //-------------------------------------------------------------------------------------------
+	(1 + 1 + 1 + 1 + 1 + 1)
+      )
+
       // 3rd order term (see eq. (36) from @copybrief Smolarkiewicz_and_Margolin_1998 (with G=1))
       template<opts_t opts, int dim, class arr_2d_t>
       inline auto HOT( // no HOT
@@ -135,7 +216,7 @@ namespace libmpdataxx
         const arr_2d_t &G,
         const rng_t &i,
         const rng_t &j,
-        typename std::enable_if<!opts::isset(opts, opts::tot)>::type* = 0
+        typename std::enable_if<!opts::isset(opts, opts::tot) && !opts::isset(opts, opts::fot)>::type* = 0
       ) -> decltype(0)
       {
         return 0; //no Higher Order Terms for second accuracy 
@@ -153,6 +234,29 @@ namespace libmpdataxx
          HOT_1<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_1_helper<opts BOOST_PP_COMMA() dim>(GC[dim], G, i, j) 
          + 
          HOT_2<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_2_helper<opts BOOST_PP_COMMA() dim>(GC, G, i, j)
+      )
+      
+      template<opts_t opts, int dim, class arr_2d_t>
+      inline auto HOT( // higher order terms
+        const arr_2d_t &psi,
+        const arrvec_t<arr_2d_t> &GC,
+        const arr_2d_t &G,
+        const rng_t &i,
+        const rng_t &j,
+        typename std::enable_if<opts::isset(opts, opts::fot)>::type* = 0
+      ) return_macro(
+         static_assert(opts::isset(opts, opts::iga), "fourth order terms only available with the iga option");
+         static_assert(!opts::isset(opts, opts::abs), "iga & abs options are mutually exclusive");
+         ,
+         HOT_1<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_1_helper<opts BOOST_PP_COMMA() dim>(GC[dim], G, i, j) 
+         + 
+         HOT_2<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_2_helper<opts BOOST_PP_COMMA() dim>(GC, G, i, j)
+         + 
+         HOT_3<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_3_helper<opts BOOST_PP_COMMA() dim>(GC[dim], G, i, j) 
+         + 
+         HOT_4<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_4_helper<opts BOOST_PP_COMMA() dim>(GC, G, i, j)
+         + 
+         HOT_5<opts BOOST_PP_COMMA() dim>(psi, i, j) * HOT_5_helper<opts BOOST_PP_COMMA() dim>(GC, G, i, j)
       )
     } // namespace mpdata
   } // namespace formulae
