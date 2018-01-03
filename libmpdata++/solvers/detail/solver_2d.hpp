@@ -47,7 +47,7 @@ namespace libmpdataxx
 
 	void xchng(int e) final
 	{
-          this->xchng_sclr(this->mem->psi[e][ this->n[e]], this->ijk, this->halo);
+          this->xchng_sclr(this->mem->psi[e][ this->n[e]], this->ijk, this->halo, e > 0);
 	}
 
         void xchng_vctr_alng(arrvec_t<typename parent_t::arr_t> &arrvec,
@@ -200,10 +200,10 @@ namespace libmpdataxx
 
         typename parent_t::real_t courant_number(const arrvec_t<typename parent_t::arr_t> &arrvec) final
         {
-          stat_field(this->ijk) = 0.5 * (
-                                           abs(arrvec[0](i+h, j) + arrvec[0](i-h, j))
-                                         + abs(arrvec[1](i, j+h) + arrvec[1](i, j-h))
-                                        ) / formulae::G<ct_params_t::opts, 0>(*this->mem->G, i, j);
+          stat_field(this->ijk) = (
+                                     (arrvec[0](i+h, j) - arrvec[0](i-h, j))
+                                   + (arrvec[1](i, j+h) - arrvec[1](i, j-h))
+                                  ) / formulae::G<ct_params_t::opts, 0>(*this->mem->G, i, j);
           return this->mem->max(this->rank, stat_field(this->ijk));
         }
         

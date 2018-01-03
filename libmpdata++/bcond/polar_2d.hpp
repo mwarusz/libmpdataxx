@@ -37,6 +37,7 @@ namespace libmpdataxx
             a(pi<d>(this->left_halo_sclr.last() - i,
                     jj)) 
             =
+            (deriv ? -1 : 1) *
             a(pi<d>(this->left_edge_sclr + i,
                     this->polar_neighbours(jj)));
               
@@ -104,6 +105,7 @@ namespace libmpdataxx
             a(pi<d>(this->rght_halo_sclr.first() + i,
                     jj)) 
             =
+            (deriv ? -1 : 1) *
             a(pi<d>(this->rght_edge_sclr - i,
                     this->polar_neighbours(jj)));
               

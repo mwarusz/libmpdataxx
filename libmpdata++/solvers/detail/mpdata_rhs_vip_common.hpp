@@ -262,7 +262,7 @@ namespace libmpdataxx
           vip_rhs_impl_init();
 	}
 
-        bool calc_gc() final
+        bool calc_gc()
         {
 	  //extrapolate velocity field in time (t+1/2)
 	  extrapolate_in_time();
@@ -276,7 +276,7 @@ namespace libmpdataxx
           return true;
         }
         
-        void calc_ndt_gc() final
+        void calc_ndt_gc()
         {
           if (parent_t::div3_mpdata)
           {

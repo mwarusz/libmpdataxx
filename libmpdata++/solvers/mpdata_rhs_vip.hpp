@@ -163,7 +163,7 @@ namespace libmpdataxx
         auto ex = this->halo - 1;
 	intrp<0>(interpolated, this->vip_state(0, 0), im, this->j^ex, this->di);
 	intrp<1>(interpolated, this->vip_state(0, 1), jm, this->i^ex, this->dj);
-        this->xchng_vctr_alng(interpolated, /*ad*/ true, /*cyclic*/ true, ex);
+        this->xchng_vctr_alng(interpolated, /*ad*/ false, /*cyclic*/ false, ex);
         this->xchng_vctr_nrml(interpolated, this->ijk, ex, /*cyclic*/ false);
       }
 

@@ -121,7 +121,7 @@ namespace libmpdataxx
           (
               4 * GC[dim](pi<dim>(i+h, j)) * ndxx_psi<opts, dim>(psi, i, j)
             + 2 * ndx_psi<opts, dim>(psi, i, j) * ndx_GC0<dim>(GC[dim], i, j)
-            + div_3rd_spatial_helper<opts, dim, sptl_intrp>(psi, GC, i, j)
+            //+ div_3rd_spatial_helper<opts, dim, sptl_intrp>(psi, GC, i, j)
           )
         );
       }
@@ -197,9 +197,9 @@ namespace libmpdataxx
           + 1.0 / 24 *
           (
               + 8 * GC[dim](pi<dim>(i+h, j)) *  nfdiv_dt<opts, dim>(psi_np1, psi_n, GC, G, i, j)
-              + 1 * ndtt_GC0<opts, dim>(psi_np1, ndtt_GC[dim], i, j)
-              + 2 * GC[dim](pi<dim>(i+h, j)) *  nfdiv<opts, dim>(psi_np1, ndt_GC, G, i, j)
-              + 2 * ndt_GC[dim](pi<dim>(i+h, j)) * ndt_psi<opts, dim>(psi_np1, psi_n, i, j)
+              //+ 1 * ndtt_GC0<opts, dim>(psi_np1, ndtt_GC[dim], i, j)
+              //+ 2 * GC[dim](pi<dim>(i+h, j)) *  nfdiv<opts, dim>(psi_np1, ndt_GC, G, i, j)
+              //+ 2 * ndt_GC[dim](pi<dim>(i+h, j)) * ndt_psi<opts, dim>(psi_np1, psi_n, i, j)
           )
         );
       }

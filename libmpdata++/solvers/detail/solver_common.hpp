@@ -239,6 +239,9 @@ namespace libmpdataxx
             // for variable in time velocity calculate advector at n+1/2, returns false if
             // velocity does not change in time
             bool var_gc = calc_gc();
+            
+            auto cfl = courant_number(mem->GC);
+            if (this->rank == 0) std::cout << timestep << ' ' << cfl << std::endl;
 
             // for variable in time velocity with adaptive time-stepping modify advector
             // to keep the Courant number roughly constant
