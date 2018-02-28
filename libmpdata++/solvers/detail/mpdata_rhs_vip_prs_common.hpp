@@ -30,7 +30,7 @@ namespace libmpdataxx
 	protected:
 
 	// member fields
-	const real_t err_tol;
+	const real_t prs_tol, err_tol;
         int iters = 0;
         bool converged = false;
 
@@ -71,7 +71,7 @@ namespace libmpdataxx
             }
           }
           if (!simple) this->normalize_vip(lap_tmp);
-          this->set_edges(lap_tmp, this->ijk, 0);
+          this->set_edges(lap_tmp, this->ijk, err_init ? -1 : 0);
           for (int d = 0; d < parent_t::n_dims; ++d)
           {
             this->xchng_pres(lap_tmp[d], ijk);
@@ -158,7 +158,7 @@ namespace libmpdataxx
           formulae::nabla::calc_grad<parent_t::n_dims>(tmp_uvw, Phi, this->ijk, this->dijk);
           for (int d = 0; d < parent_t::n_dims; ++d)
           {
-            this->vip_rhs[d](this->ijk) -= 0.5 * this->dt * tmp_uvw[d](this->ijk);
+            this->vip_rhs[d](this->ijk) -= tmp_uvw[d](this->ijk);
           }
         }
 
@@ -178,6 +178,7 @@ namespace libmpdataxx
           for (int d = 0; d < parent_t::n_dims; ++d)
           {
             this->vip_rhs[d](this->ijk) += this->vips()[d](this->ijk);
+            this->vip_rhs[d](this->ijk) /= (0.5 * this->dt);
           }
         }
 
@@ -194,6 +195,7 @@ namespace libmpdataxx
 	  const rt_params_t &p
 	) : 
 	  parent_t(args, p),
+          prs_tol(p.prs_tol),
           err_tol(p.prs_tol / this->dt), // make stopping criterion correspond to dimensionless divergence
                Phi(args.mem->tmp[__FILE__][0][0]),
                err(args.mem->tmp[__FILE__][0][1]),

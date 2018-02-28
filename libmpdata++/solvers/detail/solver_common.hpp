@@ -38,26 +38,32 @@ namespace libmpdataxx
         enum { halo = minhalo }; 
         enum { n_dims = ct_params_t::n_dims };
         enum { n_tlev = n_tlev_ };
-
+        
+        using ct_params_t_ = ct_params_t; // propagate ct_params_t mainly for output purposes
         typedef typename ct_params_t::real_t real_t;
         typedef blitz::Array<real_t, n_dims> arr_t;
         using bcp_t = std::unique_ptr<bcond::detail::bcond_common<real_t, halo>>;
 
         using ix = typename ct_params_t::ix;
 
+        using advance_arg_t = typename std::conditional<ct_params_t::var_dt, real_t, int>::type;
+
 	protected: 
-        
+        // TODO: output common doesnt know about ct_params_t
+        bool var_dt = ct_params_t::var_dt;
+
         std::array<std::array<bcp_t, 2>, n_dims> bcs;
 
         const int rank;
 
         // di, dj, dk declared here for output purposes
-        real_t dt, di, dj, dk, max_abs_div_eps;
+        real_t prev_dt, dt, di, dj, dk, max_abs_div_eps, max_courant;
         std::array<real_t, n_dims> dijk;
 
 	const idx_t<n_dims> ijk;
 
         long long int timestep = 0;
+        real_t time = 0;
         std::vector<int> n; 
 
         typedef concurr::detail::sharedmem<real_t, n_dims, n_tlev> mem_t; 
@@ -75,10 +81,37 @@ namespace libmpdataxx
 	virtual void xchng(int e) = 0;
         // TODO: implement flagging of valid/invalid halo for optimisations
 
+        virtual void xchng_vctr_alng(arrvec_t<arr_t>&, const bool ad = false, const bool cyclic = false) = 0;
+
         void set_bcs(const int &d, bcp_t &bcl, bcp_t &bcr)
         {
           bcs[d][0] = std::move(bcl);
           bcs[d][1] = std::move(bcr);
+        }
+
+	virtual real_t courant_number(const arrvec_t<arr_t>&) = 0;
+	virtual real_t max_abs_vctr_div(const arrvec_t<arr_t>&) = 0;
+       
+        // return false if advector does not change in time
+        virtual bool calc_gc() {return false;}
+
+        virtual void scale_gc(const real_t time, const real_t cur_dt, const real_t old_dt) = 0;
+
+        // thread-aware range extension
+        template <class n_t>
+        rng_t extend_range(const rng_t &r, const n_t n) const
+        {
+          if (mem->size == 1) return r^n;
+          return rank == 0 ? rng_t((r - n).first(), r.last()) :
+                               rank == mem->size - 1 ? rng_t(r.first(), (r + n).last()) :
+                                 r;
+        }
+        
+        // thread-aware range extension, variadic version
+        template <class n_t, class... ns_t>
+        rng_t extend_range(const rng_t &r, const n_t n, const ns_t... ns) const
+        {
+          return extend_range(extend_range(r, n), ns...);
         }
 
         private:
@@ -107,19 +140,35 @@ namespace libmpdataxx
 #endif
         }
 
-        virtual void hook_ante_loop(const int nt) 
+        virtual void hook_ante_loop(const advance_arg_t nt) 
         {
 #if !defined(NDEBUG)
           hook_ante_loop_called = true;
 #endif
+          // fill halos in velocity field
+          this->xchng_vctr_alng(mem->GC);
+         
+          // adaptive timestepping - for constant in time velocity it suffices
+          // to change the timestep once and do a simple scaling of advector
+          if (ct_params_t::var_dt)
+          {
+            real_t cfl = courant_number(mem->GC);
+            if (cfl > 0)
+            {
+              dt *= max_courant / cfl;
+              scale_gc(time, dt, prev_dt);
+            }
+          }
         }
 
 	public:
 
+        const real_t time_() const { return time;}
+
         struct rt_params_t 
         {
           std::array<int, n_dims> grid_size;
-          real_t dt=0, max_abs_div_eps = blitz::epsilon(real_t(44));
+          real_t dt=0, max_abs_div_eps = blitz::epsilon(real_t(44)), max_courant = 0.5;
         };
 
 	// ctor
@@ -130,11 +179,13 @@ namespace libmpdataxx
           const decltype(ijk) &ijk
         ) :
           rank(rank), 
+          prev_dt(p.dt),
           dt(p.dt),
           di(0),
           dj(0),
           dk(0),
           max_abs_div_eps(p.max_abs_div_eps),
+          max_courant(p.max_courant),
 	  n(n_eqns, 0), 
           mem(mem),
           ijk(ijk)
@@ -158,10 +209,11 @@ namespace libmpdataxx
 #endif
         }
 
-	virtual void solve(int nt) final
+	virtual void solve(advance_arg_t nt) final
 	{   
           // multiple calls to sovlve() are meant to advance the solution by nt
-          nt += timestep;
+          // TODO: does it really work with var_dt ? we do not advance by time exactly ...
+          nt += ct_params_t::var_dt ? time : timestep;
 
           // being generous about out-of-loop barriers 
           if (timestep == 0)
@@ -179,17 +231,40 @@ namespace libmpdataxx
 	  hook_ante_step_called = false;
 	  hook_post_step_called = false;
 #endif
-
-	  while (timestep < nt)
+          // higher-order temporal interpolation for output requires doing a few additional steps
+          int additional_steps = ct_params_t::out_intrp_ord;
+	  while (ct_params_t::var_dt ? (time < nt || additional_steps > 0) : timestep < nt)
 	  {   
 	    // progress-bar info through thread name (check top -H)
-	    monitor(float(timestep) / nt);  // TODO: does this value make sanse with repeated advence() calls?
+	    monitor(float(ct_params_t::var_dt ? time : timestep) / nt);  // TODO: does this value make sanse with repeated advence() calls?
 
             // might be used to implement multi-threaded signal handling
             mem->barrier();
             if (mem->panic) break;
 
             // proper solver stuff
+            
+            // for variable in time velocity calculate advector at n+1/2, returns false if
+            // velocity does not change in time
+            bool var_gc = calc_gc();
+
+            // for variable in time velocity with adaptive time-stepping modify advector
+            // to keep the Courant number roughly constant
+            if (var_gc && ct_params_t::var_dt)
+            {
+              real_t cfl = courant_number(mem->GC);
+              if (cfl > 0)
+              {
+                do 
+                {
+                  dt *= max_courant / cfl;
+                  calc_gc();
+                  cfl = courant_number(mem->GC);
+                }
+                while (cfl > max_courant);
+              }
+            }
+            
             hook_ante_step();
 
 	    for (int e = 0; e < n_eqns; ++e) scale(e, ct_params_t::hint_scale(e));
@@ -205,7 +280,11 @@ namespace libmpdataxx
 	    for (int e = 0; e < n_eqns; ++e) scale(e, -ct_params_t::hint_scale(e));
 
             timestep++;
+            time = ct_params_t::var_dt ? time + dt : timestep * dt;
+            prev_dt = dt;
             hook_post_step();
+
+            if (time >= nt) additional_steps--;
 	  }   
 
           mem->barrier();

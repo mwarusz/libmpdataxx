@@ -22,8 +22,10 @@
 #include <libmpdata++/bcond/open_2d.hpp>
 #include <libmpdata++/bcond/open_3d.hpp>
 #include <libmpdata++/bcond/polar_2d.hpp>
+#include <libmpdata++/bcond/polar_3d.hpp>
 #include <libmpdata++/bcond/rigid_2d.hpp>
 #include <libmpdata++/bcond/rigid_3d.hpp>
+#include <libmpdata++/bcond/gndsky_3d.hpp>
 
 #include <libmpdata++/concurr/detail/sharedmem.hpp>
 #include <libmpdata++/concurr/detail/timer.hpp>
@@ -41,7 +43,7 @@ namespace libmpdataxx
         bcond::bcond_e bcyl, bcond::bcond_e bcyr,
         bcond::bcond_e bczl, bcond::bcond_e bczr
       >
-      class concurr_common : public any<typename solver_t_::real_t, solver_t_::n_dims>
+      class concurr_common : public any<typename solver_t_::real_t, solver_t_::n_dims, typename solver_t_::advance_arg_t>
       {
         public:
 
@@ -80,6 +82,7 @@ namespace libmpdataxx
 	public:
 
         typedef typename solver_t::real_t real_t;
+        using advance_arg_t = typename solver_t::advance_arg_t;
 
         // dtor
 	virtual ~concurr_common()
@@ -237,11 +240,11 @@ namespace libmpdataxx
           }
         }
 
-        virtual void solve(int nt) = 0;
+        virtual void solve(advance_arg_t nt) = 0;
 
         public:
     
-        void advance(int nt) final
+        void advance(advance_arg_t nt) final
         {   
           tmr.resume();
           solve(nt);
@@ -281,6 +284,11 @@ namespace libmpdataxx
         bool *panic_ptr() final
         {
           return &this->mem->panic;
+        }
+
+        const real_t time() const final
+        {
+          return algos[0].time_();
         }
       };
     } // namespace detail

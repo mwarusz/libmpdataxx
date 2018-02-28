@@ -22,6 +22,12 @@ namespace libmpdataxx
     template <class solver_t>
     class gnuplot : public detail::output_common<solver_t>
     {
+      protected:
+
+      using output_t = gnuplot<solver_t>;
+      
+      private:
+
       using parent_t = detail::output_common<solver_t>;
 
       static_assert(parent_t::n_dims < 3, "only 1D and 2D output supported");
@@ -29,7 +35,7 @@ namespace libmpdataxx
       std::unique_ptr<Gnuplot> gp;
       const int precision = 5;
 
-      void start(const int nt)
+      void start(const typename parent_t::advance_arg_t nt)
       {
         gp.reset(new Gnuplot());
         *gp << std::fixed << std::setprecision(precision);

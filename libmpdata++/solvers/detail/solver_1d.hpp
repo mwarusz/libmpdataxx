@@ -29,6 +29,9 @@ namespace libmpdataxx
 
 	const rng_t i; //TODO: to be removed
 
+        // generic field used for various statistics (currently Courant number and divergence)
+        typename parent_t::arr_t &stat_field; // TODO: should be in solver common but cannot be allocated there ?
+
         virtual void xchng_sclr(typename parent_t::arr_t &arr, const bool deriv = false) final // for a given array
         {
           this->mem->barrier();
@@ -41,19 +44,38 @@ namespace libmpdataxx
           xchng_sclr(this->mem->psi[e][ this->n[e]]);
 	}
 
-        virtual void xchng_vctr_alng(const arrvec_t<typename parent_t::arr_t> &arrvec) final
+        void xchng_vctr_alng(arrvec_t<typename parent_t::arr_t> &arrvec, const bool ad = false, const bool cyclic = false) final
         {
           this->mem->barrier();
-          for (auto &bc : this->bcs[0]) bc->fill_halos_vctr_alng(arrvec); 
+          if (!cyclic)
+          {
+            for (auto &bc : this->bcs[0]) bc->fill_halos_vctr_alng(arrvec, ad); 
+          }
+          else
+          {
+            for (auto &bc : this->bcs[0]) bc->fill_halos_vctr_alng_cyclic(arrvec, ad);
+          }
           this->mem->barrier();
         }
 
-        void hook_ante_loop(const int nt) // TODO: this nt conflicts in fact with multiple-advance()-call logic!
+        typename parent_t::real_t courant_number(const arrvec_t<typename parent_t::arr_t> &arrvec) final
         {
-          parent_t::hook_ante_loop(nt);
-	  
-          // filling halo in velocity field
-          xchng_vctr_alng(this->mem->GC);
+          stat_field(this->ijk) = 0.5 * (abs(arrvec[0](i+h) + arrvec[0](i-h)));
+          return this->mem->max(this->rank, stat_field(this->ijk));
+        }
+        
+        typename parent_t::real_t max_abs_vctr_div(const arrvec_t<typename parent_t::arr_t> &arrvec) final
+        {
+          stat_field(this->ijk) = abs((arrvec[0](i+h) - arrvec[0](i-h)));
+          return this->mem->max(this->rank, stat_field(this->ijk));
+        }
+
+        void scale_gc(const typename parent_t::real_t time,
+                      const typename parent_t::real_t cur_dt,
+                      const typename parent_t::real_t old_dt) final
+        {
+          this->mem->GC[0](rng_t(i.first(), i.last()-1)^h) *= cur_dt / old_dt;
+          this->xchng_vctr_alng(this->mem->GC);
         }
 
         public:
@@ -86,7 +108,8 @@ namespace libmpdataxx
             p, 
             idx_t<parent_t::n_dims>(args.i)
           ), 
-          i(args.i)
+          i(args.i),
+          stat_field(args.mem->tmp[__FILE__][0][0])
 	{
           this->di = p.di;
           this->dijk = {p.di};
@@ -130,6 +153,16 @@ namespace libmpdataxx
     
 	  mem->GC.push_back(mem->old(new typename parent_t::arr_t(parent_t::rng_vctr(mem->grid_size[0])))); 
 
+          // fully third-order accurate mpdata needs also time derivatives of
+          // the Courant field
+          if (opts::isset(ct_params_t::opts, opts::div_3rd) ||
+              opts::isset(ct_params_t::opts, opts::div_3rd_dt))
+          {
+            // TODO: why for (auto f : {mem->ndt_GC, mem->ndtt_GC}) doesn't work ?
+	    mem->ndt_GC.push_back(mem->old(new typename parent_t::arr_t(parent_t::rng_vctr(mem->grid_size[0]))));
+	    mem->ndtt_GC.push_back(mem->old(new typename parent_t::arr_t(parent_t::rng_vctr(mem->grid_size[0]))));
+          }
+
           if (opts::isset(ct_params_t::opts, opts::nug))
 	    mem->G.reset(mem->old(new typename parent_t::arr_t(parent_t::rng_sclr(mem->grid_size[0]))));
 
@@ -139,6 +172,9 @@ namespace libmpdataxx
               mem->khn_tmp.push_back(mem->old(new typename parent_t::arr_t( 
                 parent_t::rng_sclr(mem->grid_size[0])
               )));
+
+          // courant field
+          alloc_tmp_sclr(mem, __FILE__, 1);
         } 
 
         protected:

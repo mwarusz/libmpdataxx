@@ -34,12 +34,24 @@ namespace libmpdataxx
 
 	const rng_t im;
 
-	void hook_ante_loop(const int nt)
+	void hook_ante_loop(const typename parent_t::advance_arg_t nt)
 	{
   //  note that it's not needed for upstream
 	  parent_t::hook_ante_loop(nt);
 	  if (opts::isset(ct_params_t::opts, opts::nug))
             this->xchng_sclr(*this->mem->G); 
+
+          // set time derivatives of GC to zero
+          // needed for stationary flows prescribed using the advector method
+          if (opts::isset(ct_params_t::opts, opts::div_3rd_dt) || opts::isset(ct_params_t::opts, opts::div_3rd))
+          {
+            this->mem->ndt_GC[0](this->im + h) = 0;
+            
+            this->mem->ndtt_GC[0](this->im + h) = 0;
+
+            this->xchng_vctr_alng(this->mem->ndt_GC);
+            this->xchng_vctr_alng(this->mem->ndtt_GC);
+          }
 	}
 
 	// method invoked by the solver
@@ -55,13 +67,24 @@ namespace libmpdataxx
               this->xchng(e);
 
 	      // calculating the antidiffusive C 
-	      this->GC_corr(iter)[0](im+h) = 
-		formulae::mpdata::antidiff<ct_params_t::opts>(
-		  this->mem->psi[e][this->n[e]], 
-		  this->GC_unco(iter)[0],
-		  *this->mem->G,
-		  im
-		);
+              formulae::mpdata::antidiff<ct_params_t::opts, static_cast<sptl_intrp_t>(ct_params_t::sptl_intrp)>(
+                this->GC_corr(iter)[0],
+                this->mem->psi[e][this->n[e]], 
+                this->GC_unco(iter),
+                this->mem->ndt_GC,
+                this->mem->ndtt_GC,
+                *this->mem->G,
+                im
+              );
+
+              // needed with the dfl option
+              // if we aren't in the last iteration and fct is not set
+              if (opts::isset(ct_params_t::opts, opts::dfl) &&
+                  iter != (this->n_iters - 1) &&
+                  !opts::isset(ct_params_t::opts, opts::fct))
+              {
+                this->xchng_vctr_alng(this->GC_corr(iter));
+              }
 
 	      this->fct_adjust_antidiff(e, iter); // i.e. calculate GC_mono=GC_mono(GC_corr) in FCT
 	    }
@@ -69,7 +92,7 @@ namespace libmpdataxx
 	    // calculation of fluxes
 	    if (!opts::isset(ct_params_t::opts, opts::iga) || iter == 0)
 	    {
-              this->flux[0](im+h) = formulae::donorcell::flux<ct_params_t::opts>(
+              this->flux[0](im+h) = formulae::donorcell::make_flux<ct_params_t::opts>(
                 this->mem->psi[e][this->n[e]],
                 this->GC(iter)[0], 
                 im

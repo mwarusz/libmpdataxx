@@ -43,11 +43,12 @@ namespace libmpdataxx
 	public:
 
 	int n = 0;
+	const int size;
         std::array<rng_t, n_dims> grid_size; 
         bool panic = false; // for multi-threaded SIGTERM handling
 
         // TODO: these are public because used from outside in alloc - could friendship help?
-	arrvec_t<arr_t> GC;
+	arrvec_t<arr_t> GC, ndt_GC, ndtt_GC;
         std::vector<arrvec_t<arr_t>> psi; // TODO: since n_eqns is known, could make it an std::array!
 	std::unique_ptr<arr_t> G;
 	std::unique_ptr<arr_t> vab_coeff; // velocity absorber coefficient
@@ -80,7 +81,7 @@ namespace libmpdataxx
         // ctors
         // TODO: fill reducetmp with NaNs (or use 1-element arrvec_t - it's NaN-filled by default)
         sharedmem_common(const std::array<int, n_dims> &grid_size, const int &size)
-          : n(0) // TODO: is n(0) needed?
+          : n(0), size(size) // TODO: is n(0) needed?
         {
           for (int d = 0; d < n_dims; ++d) 
           {

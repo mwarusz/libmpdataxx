@@ -26,7 +26,7 @@ namespace libmpdataxx
 
       public:
       
-      void fill_halos_sclr(const arr_t &a, const rng_t &j, const bool deriv = false)
+      void fill_halos_sclr(arr_t &a, const rng_t &j, const bool deriv = false)
       {
         using namespace idxperm;
         // zero flux condition
@@ -35,37 +35,46 @@ namespace libmpdataxx
           a(pi<d>(i, j)) = a(pi<d>(this->left_edge_sclr + n, j));
         }
       }
-      
-      void fill_halos_pres(const arr_t &a, const rng_t &j)
+ 
+      void fill_halos_pres(arr_t &a, const rng_t &j)
       {
         using namespace idxperm;
         // equivalent to one-sided derivatives at the boundary
-        a(pi<d>(this->left_halo_sclr.last(), j)) = 2 * a(pi<d>(this->left_edge_sclr,     j))
-                                                     - a(pi<d>(this->left_edge_sclr + 1, j));
-      }
+        for (int i = this->left_halo_sclr.first(), n = halo; i <= this->left_halo_sclr.last(); ++i, --n)
+        {
+          a(pi<d>(i, j)) = 2 * a(pi<d>(this->left_edge_sclr,     j))
+                             - a(pi<d>(this->left_edge_sclr + n, j));
+        }
+      }     
 
       void save_edge_vel(const arr_t &, const rng_t &) {}
      
-      void set_edge_pres(const arr_t &a, const rng_t &j, int)
+      void set_edge_pres(arr_t &a, const rng_t &j, int)
       {
         using namespace idxperm;
         a(pi<d>(this->left_edge_sclr, j)) = 0;
       }
 
-      void fill_halos_vctr_alng(const arrvec_t<arr_t> &av, const rng_t &j)
+      void fill_halos_vctr_alng(arrvec_t<arr_t> &av, const rng_t &j, const bool ad = false)
       {
 	using namespace idxperm;
         // zero velocity condition
-        for (int i = this->left_halo_vctr.first(), n = halo; i <= this->left_halo_vctr.last(); ++i, --n)
+        for (int i = this->left_halo_vctr.first(), n = halo; i <= this->left_halo_vctr.last() - (ad ? 1 : 0); ++i, --n)
         {
 	  av[d](pi<d>(i, j)) = -av[d](pi<d>(this->left_edge_sclr + n - h, j));
         }
       }
 
-      void fill_halos_vctr_nrml(const arr_t &a, const rng_t &j)
+      void fill_halos_vctr_nrml(arr_t &a, const rng_t &j)
       {
         // note intentional sclr
         fill_halos_sclr(a, j);
+      }
+      
+      void fill_halos_flux(arrvec_t<arr_t> &av, const rng_t &j)
+      {
+        using namespace idxperm;
+	av[d](pi<d>(this->left_halo_vctr.last(), j)) = -av[d](pi<d>(this->left_edge_sclr + h, j));
       }
     };
 
@@ -84,7 +93,7 @@ namespace libmpdataxx
       
       public:
       
-      void fill_halos_sclr(const arr_t &a, const rng_t &j, const bool deriv = false)
+      void fill_halos_sclr(arr_t &a, const rng_t &j, const bool deriv = false)
       {
         // zero flux condition
         using namespace idxperm;
@@ -94,36 +103,46 @@ namespace libmpdataxx
         }
       }
       
-      void fill_halos_pres(const arr_t &a, const rng_t &j)
+      void fill_halos_pres(arr_t &a, const rng_t &j)
       {
         using namespace idxperm;
         // equivalent to one-sided derivatives at the boundary
-        a(pi<d>(this->rght_halo_sclr.first(), j)) = 2 * a(pi<d>(this->rght_edge_sclr,     j))
-                                                      - a(pi<d>(this->rght_edge_sclr - 1, j));
+        for (int i = this->rght_halo_sclr.first(), n = 1; i <= this->rght_halo_sclr.last(); ++i, ++n)
+        {
+          a(pi<d>(i, j)) = 2 * a(pi<d>(this->rght_edge_sclr,     j))
+                             - a(pi<d>(this->rght_edge_sclr - n, j));
+        }
       }
       
       void save_edge_vel(const arr_t &, const rng_t &) {}
       
-      void set_edge_pres(const arr_t &a, const rng_t &j, int)
+      void set_edge_pres(arr_t &a, const rng_t &j, int)
       {
         using namespace idxperm;
         a(pi<d>(this->rght_edge_sclr, j)) = 0;
       }
 
-      void fill_halos_vctr_alng(const arrvec_t<arr_t> &av, const rng_t &j)
+      void fill_halos_vctr_alng(arrvec_t<arr_t> &av, const rng_t &j, const bool ad = false)
       {
 	using namespace idxperm;
         // zero velocity condition
-        for (int i = this->rght_halo_vctr.first(), n = 1; i <= this->rght_halo_vctr.last(); ++i, ++n)
+        for (int i = this->rght_halo_vctr.first() + (ad ? 1 : 0), n = 1; i <= this->rght_halo_vctr.last(); ++i, ++n)
         {
 	  av[d](pi<d>(i, j)) = -av[d](pi<d>(this->rght_edge_sclr - n + h, j));
         }
       }
       
-      void fill_halos_vctr_nrml(const arr_t &a, const rng_t &j)
+      void fill_halos_vctr_nrml(arr_t &a, const rng_t &j)
       {
         // note intentional sclr
         fill_halos_sclr(a, j);
+      }
+      
+      void fill_halos_flux(arrvec_t<arr_t> &av, const rng_t &j)
+      {
+	using namespace idxperm;
+        // zero flux condition
+	av[d](pi<d>(this->rght_halo_vctr.first(), j)) = -av[d](pi<d>(this->rght_edge_sclr - h, j));
       }
     };
   } // namespace bcond
