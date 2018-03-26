@@ -5,12 +5,13 @@
  * GPLv3+ (see the COPYING file or http://www.gnu.org/licenses/)
  */
 #pragma once
-#include <libmpdata++/solvers/mpdata_rhs_vip_prs.hpp>
+#include <libmpdata++/solvers/boussinesq.hpp>
+#include <algorithm>
 
 template <class ct_params_t>
-class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs<ct_params_t>
+class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_t>
 {
-  using parent_t = libmpdataxx::solvers::mpdata_rhs_vip_prs<ct_params_t>;
+  using parent_t = libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_t>;
 
   public:
   using real_t = typename ct_params_t::real_t;
@@ -18,10 +19,45 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs<ct_params_t>
   protected:
   // member fields
   using ix = typename ct_params_t::ix;
-  typename parent_t::arr_t &tht_e, &tht_0, &rho_0, &thm_e, &qv_e;
+  const real_t buoy_eps = 0.622;
+  real_t g;
+  bool buoy_filter;
+  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2;
 
-  real_t gg, rg, rv, cp, hlatv, hlats, tup, tdn, tt0, ee0;
+  template <int nd = ct_params_t::n_dims> 
+  void filter(typename std::enable_if<nd == 3>::type* = 0)
+  {
+    const auto &i(this->i), &j(this->j), &k(this->k);
+    this->xchng_sclr(tmp1, this->ijk);
+    tmp2(i, j, k) = 0.25 * (tmp1(i, j, k + 1) + 2 * tmp1(i, j, k) + tmp1(i, j, k - 1));
+  }
+  
+  // helpers for buoyancy forces
+  template<class ijk_t>
+  inline auto buoy_at_0(const ijk_t &ijk)
+  {
+    return libmpdataxx::return_helper<libmpdataxx::rng_t>(
+      this->g * (
+                  (this->state(ix::tht)(ijk) - this->tht_e(ijk)) / this->tht_b(ijk)
+                + buoy_eps * (this->state(ix::qv)(ijk) - this->qv_e(ijk))
+                - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
+                )
+    );
+  }
+  
+  template<class ijk_t>
+  inline auto buoy_at_1(const ijk_t &ijk)
+  {
+    return libmpdataxx::return_helper<libmpdataxx::rng_t>(
+      this->g * (
+                  (this->state(ix::tht)(ijk) - this->tht_e(ijk)) / this->tht_b(ijk)
+                + buoy_eps * (this->state(ix::qv)(ijk) - this->qv_e(ijk))
+                - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
+                )
+    );
+  }
 
+  // explicit forcings 
   void update_rhs(
     libmpdataxx::arrvec_t<
       typename parent_t::arr_t
@@ -31,102 +67,156 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs<ct_params_t>
   ) {
     parent_t::update_rhs(rhs, dt, at); 
 
-    real_t epsb = rv/rg-1;
-
+    const auto &tht = this->state(ix::tht); 
     const auto &ijk = this->ijk;
 
-    auto &tht = this->state(ix::tht); 
-    auto &w = this->state(ix::w); 
-    auto &qv = this->state(ix::qv); 
-    auto &qc = this->state(ix::qc); 
-    
-    const auto &tht_e = this->tht_e; 
-    const auto &tht_0 = this->tht_0; 
-    const auto &thm_e = this->thm_e; 
-    const auto &rho_0 = this->rho_0; 
-    const auto &qv_e = this->qv_e; 
-    
-    using T = typename ct_params_t::real_t;
-    auto alim01 = [](T x){return std::max(0.0, std::min(1.0, x));};
-    auto comb = [&alim01](T tm, T td, T tu, T ad, T au){return alim01((tm-td)/(tu-td))*au + alim01((tu-tm)/(tu-td))*ad;};
-
-    auto a=rg/rv;
-    auto c=hlatv/cp;
-    auto b=hlats/rv;
-    auto d=hlatv/rv;
-    auto e=-cp/rg;
+    auto ix_w = this->vip_ixs[ct_params_t::n_dims - 1];
 
     switch (at)
     {
       case (0):
       {
-        //rhs.at(ix::w)(ijk) += gg * ((tht(ijk) - this->tht_e(ijk)) / tht_0(ijk)
-        //                      + epsb * (qv(ijk) - qv_e(ijk)) - qc(ijk));
+        if (!buoy_filter)
+        {
+          rhs.at(ix_w)(ijk) += buoy_at_0(ijk);
+        }
+        else
+        {
+          tmp1(ijk) = buoy_at_0(ijk);
+          filter();
+          rhs.at(ix_w)(ijk) += (tmp2)(ijk);
+        }
         break;
       }
       case (1):
       {
-        for (int i = this->i.first(); i <= this->i.last(); ++i)
+        if (!buoy_filter)
         {
-          for (int j = this->j.first(); j <= this->j.last(); ++j)
-          {
-            for (int k = this->k.first(); k <= this->k.last(); ++k)
-            {
-              auto thetme=tht_e(0, j, k)/thm_e(0, j, k);
-              auto coe_l=comb(thm_e(0, j, k),tdn,tup,0.,1.);
-              auto pre=1.e5*pow(thetme, e);
-              auto tt=tht(i,j, k)/thetme;
-              auto delt=(tt-tt0)/(tt*tt0);
-              auto esw=ee0*exp(d * delt);
-              auto esi=ee0*exp(b * delt);
-              auto qvsw=a * esw /(pre-esw);
-              auto qvsi=a * esi /(pre-esi);
-              auto qvs=coe_l*qvsw + (1.-coe_l)*qvsi;
-        // linearized condensation rate is next:
-              auto cf1=thetme/tht(i,j,k);
-              cf1=cf1*cf1;
-              cf1=c*cf1*pre/(pre-esw)*d;
-              auto delta=(qv(i,j,k)-qvs)/(1.+qvs*cf1);
-        //  one Newton-Raphson iteration is next:
-              auto thn=tht(i,j, k)+c*thetme*delta;
-              tt=thn/thetme;
-              delt=(tt-tt0)/(tt*tt0);
-              esw=ee0*exp(d * delt);
-              esi=ee0*exp(b * delt);
-              qvsw=a * esw /(pre-esw);
-              qvsi=a * esi /(pre-esi);
-              qvs=coe_l*qvsw + (1.-coe_l)*qvsi;
-              auto fff=qv(i,j,k)-delta-qvs;
-              cf1=thetme/thn;
-              cf1=cf1*cf1;
-              cf1=c*cf1*pre/(pre-esw)*d;
-              auto fffp=-1.-qvs*cf1;
-              delta=delta-fff/fffp;
-        //      end of the iteration; if required, it can be repeated
-              delta=std::min( qv(i,j,k), std::max(-qc(i,j,k),delta) );
-
-              auto new_qv=qv(i,j,k)-delta;
-              auto new_qc=qc(i,j,k)+delta;
-              auto new_tht=tht(i,j,k)+c*thetme*delta;
-              //delta=std::min( new_qv, std::max(-new_qc,delta) );
-              
-              rhs.at(ix::qv)(i,j,k) += -delta*2./this->dt;
-              rhs.at(ix::tht)(i,j,k)+= -c*thetme*rhs.at(ix::qv)(i,j,k);
-              rhs.at(ix::qc)(i,j,k) += -rhs.at(ix::qv)(i,j,k);
-          
-              rhs.at(ix::w)(i,j,k) += gg * ((new_tht - this->tht_e(i, j,k)) / tht_0(i,j,k)
-                                  + epsb * (new_qv - qv_e(i, j,k)) - new_qc);
-            }
-          }
+          rhs.at(ix_w)(ijk) += buoy_at_1(ijk);
+        }
+        else
+        {
+          tmp1(ijk) = buoy_at_1(ijk);
+          filter();
+          rhs.at(ix_w)(ijk) += (tmp2)(ijk);
         }
       }
     }
   }
 
+  template <typename arr_1d_t>
+  void kessler(arr_1d_t qv, arr_1d_t qc, arr_1d_t qr, arr_1d_t theta, arr_1d_t rho, arr_1d_t pk, int nz)
+  {
+    const real_t dt = this->dt;
+    const real_t dz = this->dk;
+
+    blitz::Array<real_t, 1> r(nz), rhalf(nz), velqr(nz), sed(nz), pc(nz);
+
+    const real_t f2x = 17.27;
+    const real_t f5 = 237.3 * f2x * 2500000 / 1003;
+    const real_t xk = 0.2875;
+    const real_t psl = 1000.0;
+    const real_t rhoqr = 1000.0;
+
+    for (int k = 0; k < nz; ++k)
+    {
+      r(k) = 0.001 * rho(k);
+      rhalf(k) = std::sqrt(rho(0) / rho(k));
+      pc(k) = 3.8 / (std::pow(pk(k), 1. / xk) * psl);
+
+      velqr(k) = 36.34 * std::pow(qr(k) * r(k), 0.1364) * rhalf(k);
+    }
+
+    auto dt_max = dt;
+    
+    for (int k = 0; k < nz - 1; ++k)
+    {
+      if (velqr(k) != 0.)
+      {
+        dt_max = std::min(dt_max, 0.8 * dz / velqr(k));
+      }
+    }
+
+    int rainsplit = std::ceil(dt / dt_max);
+    const auto dt0 = dt / rainsplit;
+
+    real_t precl = 0.;
+
+    for (int m = 0; m < rainsplit; ++m)
+    {
+      precl += rho(0) * qr(0) * velqr(0) / rhoqr;
+
+      for (int k = 0; k < nz - 1; ++k)
+      {
+        sed(k) = dt0 * ((r(k + 1) * qr(k + 1) * velqr(k + 1) - r(k) * qr(k) * velqr(k)) / (r(k) * dz));
+      }
+      sed(nz - 1) = -dt0 * qr(nz - 1) * velqr(nz - 1) / (0.5 * dz);
+      
+      for (int k = 0; k < nz; ++k)
+      {
+
+        const real_t qrprod = qc(k) - (qc(k) - dt0 * std::max(.001 * (qc(k) - .001), 0.)) / (1. + dt0 * 2.2 * std::pow(qr(k), .875));
+        qc(k) = std::max(qc(k) - qrprod, 0.);
+        qr(k) = std::max(qr(k) + qrprod + sed(k), 0.);
+
+        const real_t qvs = pc(k) * std::exp(f2x * (pk(k) * theta(k) - 273.)
+                                            / (pk(k) * theta(k)- 36.));
+        //const real_t prod = (qv(k) - qvs) / (1. + qvs * f5 / std::pow(pk(k) * theta(k) - 36., 2));
+
+        if (this->rank == 0 && prod > 0) std::cout << k << " prod: " << prod << std::endl;
+
+        const real_t ern = std::min({dt0 * (((1.6 + 124.9 * std::pow(r(k) * qr(k), .2046))
+              * std::pow(r(k) * qr(k), .525)) / (2550000. * pc(k) / (3.8 * qvs) + 540000))
+              * (std::max(0., qvs - qv(k)) / (r(k) * qvs))
+              ,
+              std::max(-prod - qc(k), 0.)
+              ,
+              qr(k)
+              });
+
+        theta(k) += 2500000 / (1003. * pk(k)) * (std::max(prod, -qc(k)) - ern);
+        qv(k) = std::max(qv(k) - std::max(prod, -qc(k)) + ern, 0.);
+        qc(k) += std::max(prod, -qc(k));
+        qr(k) -= ern;
+      }
+
+      if (m != rainsplit - 1)
+      {
+        for (int k = 0; k < nz; ++k)
+        {
+          velqr(k) = 36.34 * std::pow(qr(k) * r(k), 0.1364) * rhalf(k);
+        }
+      }
+    }
+
+    precl /= rainsplit;
+  }
+
+  void hook_post_step()
+  {
+    parent_t::hook_post_step();
+    for (int i = this->i.first(); i <= this->i.last(); ++i)
+    {
+      for (int j = this->j.first(); j <= this->j.last(); ++j)
+      {
+        auto 
+        rho_c    = (*this->mem->G)(i, j, this->k).reindex(0),
+  	qv_c     = this->state(ix::qv)(i, j, this->k).reindex(0),
+  	qc_c     = this->state(ix::qc)(i, j, this->k).reindex(0),
+  	qr_c     = this->state(ix::qr)(i, j, this->k).reindex(0),
+  	tht_c    = this->state(ix::tht)(i, j, this->k).reindex(0),
+  	pk_c     = pk_e(i, j, this->k).reindex(0);
+        kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
+      }
+    }
+  }
+
   public:
+
   struct rt_params_t : parent_t::rt_params_t 
   { 
-    real_t gg, rg, rv, cp, hlatv, hlats, tup, tdn, tt0, ee0;
+    real_t g = 9.81;
+    bool buoy_filter = false;
   };
 
   // ctor
@@ -135,30 +225,23 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs<ct_params_t>
     const rt_params_t &p
   ) :
     parent_t(args, p),
-    gg(p.gg), 
-    rg(p.rg), 
-    rv(p.rv), 
-    cp(p.cp), 
-    hlatv(p.hlatv),
-    hlats(p.hlats),
-    tup(p.tup),
-    tdn(p.tdn),
-    tt0(p.tt0),
-    ee0(p.ee0),
-    tht_e(args.mem->tmp[__FILE__][0][0]),
-    tht_0(args.mem->tmp[__FILE__][1][0]),
-    rho_0(args.mem->tmp[__FILE__][2][0]),
-    thm_e(args.mem->tmp[__FILE__][3][0]),
-    qv_e(args.mem->tmp[__FILE__][4][0])
+    g(p.g),
+    buoy_filter(p.buoy_filter),
+    tht_b(args.mem->tmp[__FILE__][0][0]),
+    tht_e(args.mem->tmp[__FILE__][1][0]),
+    pk_e(args.mem->tmp[__FILE__][2][0]),
+    qv_e(args.mem->tmp[__FILE__][3][0]),
+    tmp1(args.mem->tmp[__FILE__][4][0]),
+    tmp2(args.mem->tmp[__FILE__][4][1])
   {}
 
   static void alloc(typename parent_t::mem_t *mem, const int &n_iters)
   {
     parent_t::alloc(mem, n_iters);
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "tht_b");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "tht_e");
-    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "tht_0");
-    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "rho_0");
-    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "thm_e");
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "pk_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "qv_e");
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 2); // tmp1, tmp2
   }
 };
