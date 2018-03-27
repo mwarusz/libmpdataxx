@@ -20,6 +20,7 @@ int main()
   {
     using real_t = T;
     enum { opts = opts::nug | opts::iga | opts::fct};
+    enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
     enum { n_eqns = 7 };
     enum { rhs_scheme = solvers::trapez };
@@ -38,9 +39,13 @@ int main()
   // run-time parameters
   slv_out_t::rt_params_t p;
 
-  T dx = 500;
-  T dy = dx;
-  T dz = 500;
+  T length_x = 128e3;
+  T length_y = 128e3;
+  T length_z = 20e3;
+
+  T dx = length_x / (nx - 1);
+  T dy = length_y / (ny - 1);
+  T dz = length_z / (nz - 1);
 
   p.dt = 3.0;
   p.di = dx;
@@ -184,8 +189,8 @@ int main()
   const T r0y = r0x;
   const T r0z = 1.5e3;
 
-  const T x0 = 64e3;
-  const T y0 = 64e3;
+  const T x0 = 0.5 * length_x;
+  const T y0 = 0.5 * length_y;
   const T z0 = r0z;
   
   decltype(slv.advectee()) rr(slv.advectee().shape()), delta(slv.advectee().shape());
@@ -201,7 +206,16 @@ int main()
                     0.0);
         
       slv.advectee(ix::tht) += delta(i, j, k);
+    
+      const T z_abs = 15000;
+      slv.vab_coefficient() = where(k * dz >= z_abs,
+                                     1. / 100 * (k * dz - z_abs) / (length_z - z_abs),
+                                     0);
     }
+    
+    slv.vab_relaxed_state(0)(i_r, j_r, k_r) = slv.advectee(ix::u)(i_r, j_r, k_r);
+    slv.vab_relaxed_state(1) = 0;
+    slv.vab_relaxed_state(2) = 0;
   
   }
 

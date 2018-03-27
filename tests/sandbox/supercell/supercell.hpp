@@ -48,9 +48,13 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   template<class ijk_t>
   inline auto buoy_at_1(const ijk_t &ijk)
   {
+    const auto &tht_abs = *this->mem->vab_coeff;
     return libmpdataxx::return_helper<libmpdataxx::rng_t>(
       this->g * (
-                  (this->state(ix::tht)(ijk) - this->tht_e(ijk)) / this->tht_b(ijk)
+                  ( (this->state(ix::tht)(ijk) + 0.5 * this->dt * tht_abs(ijk) * this->tht_e(ijk))
+                    / (1 + 0.5 * this->dt * tht_abs(ijk))
+                   - this->tht_e(ijk)
+                  ) / this->tht_b(ijk)
                 + buoy_eps * (this->state(ix::qv)(ijk) - this->qv_e(ijk))
                 - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
                 )
