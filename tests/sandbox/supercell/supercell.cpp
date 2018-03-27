@@ -19,6 +19,8 @@ int main()
   struct ct_params_t : ct_params_default_t
   {
     using real_t = T;
+    enum { sgs_scheme = solvers::dns};
+    enum { sgs_diff = solvers::compact};
     enum { opts = opts::nug | opts::iga | opts::fct};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
@@ -56,6 +58,7 @@ int main()
   p.n_iters = 2;
   
   p.buoy_filter = true;
+  p.eta = 500;
 
   p.outfreq = 100;
   p.outvars = {
@@ -73,7 +76,7 @@ int main()
     slv_out_t, 
     bcond::cyclic, bcond::cyclic,
     bcond::cyclic, bcond::cyclic,
-    bcond::rigid, bcond::rigid
+    bcond::gndsky, bcond::gndsky
   > slv(p);
 
   rng_t i_r(0, nx - 1);

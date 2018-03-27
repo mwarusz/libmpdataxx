@@ -23,6 +23,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   real_t g;
   bool buoy_filter;
   typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2;
+  libmpdataxx::arrvec_t<typename parent_t::arr_t> &grad_aux;
 
   template <int nd = ct_params_t::n_dims> 
   void filter(typename std::enable_if<nd == 3>::type* = 0)
@@ -59,6 +60,71 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
                 - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
                 )
     );
+  }
+
+  void diffusion()
+  {
+    const auto &ijk = this->ijk;
+
+    auto &tht = this->state(ix::tht);
+    auto &qv = this->state(ix::qv);
+    auto &qc = this->state(ix::qc);
+    auto &qr = this->state(ix::qr);
+
+    using namespace libmpdataxx::formulae;
+
+    // tht
+    this->xchng_pres(tht, ijk);
+    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tht, ijk, this->ijkm, this->dijk);
+    stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                        3.0 * this->eta,
+                                                                        *this->mem->G,
+                                                                        ijk);
+
+    this->xchng_vctr_alng(grad_aux);
+    this->rhs.at(ix::tht)(ijk) += 2.0 * stress::flux_div_cmpct<parent_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                                                    *this->mem->G,
+                                                                                                    ijk,
+                                                                                                    this->dijk);
+    // qv
+    this->xchng_pres(qv, ijk);
+    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, qv, ijk, this->ijkm, this->dijk);
+    stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                        3.0 * this->eta,
+                                                                        *this->mem->G,
+                                                                        ijk);
+
+    this->xchng_vctr_alng(grad_aux);
+    this->rhs.at(ix::qv)(ijk) += 2.0 * stress::flux_div_cmpct<parent_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                                                   *this->mem->G,
+                                                                                                   ijk,
+                                                                                                   this->dijk);
+    // qc
+    this->xchng_pres(qc, ijk);
+    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, qc, ijk, this->ijkm, this->dijk);
+    stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                        3.0 * this->eta,
+                                                                        *this->mem->G,
+                                                                        ijk);
+
+    this->xchng_vctr_alng(grad_aux);
+    this->rhs.at(ix::qc)(ijk) += 2.0 * stress::flux_div_cmpct<parent_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                                                   *this->mem->G,
+                                                                                                   ijk,
+                                                                                                   this->dijk);
+    // qr
+    this->xchng_pres(qr, ijk);
+    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, qr, ijk, this->ijkm, this->dijk);
+    stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                        3.0 * this->eta,
+                                                                        *this->mem->G,
+                                                                        ijk);
+
+    this->xchng_vctr_alng(grad_aux);
+    this->rhs.at(ix::qr)(ijk) += 2.0 * stress::flux_div_cmpct<parent_t::n_dims, ct_params_t::opts>(grad_aux,
+                                                                                                   *this->mem->G,
+                                                                                                   ijk,
+                                                                                                   this->dijk);
   }
 
   // explicit forcings 
@@ -210,6 +276,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
         kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
       }
     }
+
+    diffusion();
   }
 
   public:
@@ -233,7 +301,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     pk_e(args.mem->tmp[__FILE__][2][0]),
     qv_e(args.mem->tmp[__FILE__][3][0]),
     tmp1(args.mem->tmp[__FILE__][4][0]),
-    tmp2(args.mem->tmp[__FILE__][4][1])
+    tmp2(args.mem->tmp[__FILE__][4][1]),
+    grad_aux(args.mem->tmp[__FILE__][5])
   {}
 
   static void alloc(typename parent_t::mem_t *mem, const int &n_iters)
@@ -244,5 +313,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "pk_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "qv_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 2); // tmp1, tmp2
+    parent_t::alloc_tmp_vctr(mem, __FILE__); // grad_aux
   }
 };
