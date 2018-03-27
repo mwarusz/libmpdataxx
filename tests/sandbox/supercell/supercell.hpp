@@ -19,7 +19,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   protected:
   // member fields
   using ix = typename ct_params_t::ix;
-  const real_t buoy_eps = 0.622;
+  const real_t buoy_eps = 0.608;
   real_t g;
   bool buoy_filter;
   typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2;
@@ -67,7 +67,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   ) {
     parent_t::update_rhs(rhs, dt, at); 
 
-    const auto &tht = this->state(ix::tht); 
     const auto &ijk = this->ijk;
 
     auto ix_w = this->vip_ixs[ct_params_t::n_dims - 1];
@@ -113,7 +112,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     blitz::Array<real_t, 1> r(nz), rhalf(nz), velqr(nz), sed(nz), pc(nz);
 
     const real_t f2x = 17.27;
-    const real_t f5 = 237.3 * f2x * 2500000 / 1003;
+    const real_t f5 = 237.3 * f2x * 2500000 / 1003.;
     const real_t xk = 0.2875;
     const real_t psl = 1000.0;
     const real_t rhoqr = 1000.0;
@@ -161,9 +160,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
 
         const real_t qvs = pc(k) * std::exp(f2x * (pk(k) * theta(k) - 273.)
                                             / (pk(k) * theta(k)- 36.));
-        //const real_t prod = (qv(k) - qvs) / (1. + qvs * f5 / std::pow(pk(k) * theta(k) - 36., 2));
-
-        if (this->rank == 0 && prod > 0) std::cout << k << " prod: " << prod << std::endl;
+        const real_t prod = (qv(k) - qvs) / (1. + qvs * f5 / std::pow(pk(k) * theta(k) - 36., 2));
 
         const real_t ern = std::min({dt0 * (((1.6 + 124.9 * std::pow(r(k) * qr(k), .2046))
               * std::pow(r(k) * qr(k), .525)) / (2550000. * pc(k) / (3.8 * qvs) + 540000))

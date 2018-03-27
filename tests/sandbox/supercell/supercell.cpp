@@ -32,13 +32,13 @@ int main()
   using ix = typename ct_params_t::ix;
   using real_t = typename ct_params_t::real_t;
 
-  const int nx = 65, ny = 65, nz = 41, nt = 2400;
+  const int nx = 257, ny = 257, nz = 41, nt = 2400;
 
   using slv_out_t = output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
   slv_out_t::rt_params_t p;
 
-  T dx = 2000;
+  T dx = 500;
   T dy = dx;
   T dz = 500;
 
@@ -126,14 +126,14 @@ int main()
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
       tht_e(i_r, j_r, k) = wk_tht(k);
-      pk_e(i_r, j_r, k) = std::pow(1e5 / wk_p(k), R_d_over_c_pd_v);
+      pk_e(i_r, j_r, k) = std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
 
       const real_t f2x = 17.27;
       const T xk = 0.2875;
       const real_t psl = 1000.0;
-      const T pc = 3.8 / (std::pow(pk_e(k), 1. / xk) * psl);
-      const real_t qvs = pc * std::exp(f2x * (pk_e(k) * tht_e(k) - 273.)
-                                            / (pk_e(k) * tht_e(k)- 36.));
+      const T pc = 3.8 / (std::pow(pk_e(0, 0, k), 1. / xk) * psl);
+      const real_t qvs = pc * std::exp(f2x * (pk_e(0, 0, k) * tht_e(0, 0, k) - 273.)
+                                            / (pk_e(0, 0, k) * tht_e(0, 0, k)- 36.));
 
       qv_e(i_r, j_r, k) = std::min(0.014, wk_RH(k) * qvs);
     }
@@ -212,6 +212,7 @@ int main()
   std::cout << "MIN THT " << min(slv.advectee(ix::tht)) << std::endl; 
   std::cout << "MIN QV  " << min(slv.advectee(ix::qv)) << std::endl; 
   std::cout << "MIN QC  " << min(slv.advectee(ix::qc)) << std::endl; 
+  std::cout << "MIN QR  " << min(slv.advectee(ix::qr)) << std::endl; 
 
   std::cout << "MAX U   " << max(slv.advectee(ix::u)) << std::endl; 
   std::cout << "MAX V   " << max(slv.advectee(ix::v)) << std::endl; 
@@ -219,6 +220,7 @@ int main()
   std::cout << "MAX THT " << max(slv.advectee(ix::tht)) << std::endl; 
   std::cout << "MAX QV  " << max(slv.advectee(ix::qv)) << std::endl; 
   std::cout << "MAX QC  " << max(slv.advectee(ix::qc)) << std::endl; 
+  std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
 
   // integration
   slv.advance(nt);  
@@ -229,10 +231,12 @@ int main()
   std::cout << "MIN THT " << min(slv.advectee(ix::tht)) << std::endl; 
   std::cout << "MIN QV  " << min(slv.advectee(ix::qv)) << std::endl; 
   std::cout << "MIN QC  " << min(slv.advectee(ix::qc)) << std::endl; 
+  std::cout << "MIN QR  " << min(slv.advectee(ix::qr)) << std::endl; 
 
   std::cout << "MAX U   " << max(slv.advectee(ix::u)) << std::endl; 
   std::cout << "MAX W   " << max(slv.advectee(ix::w)) << std::endl; 
   std::cout << "MAX THT " << max(slv.advectee(ix::tht)) << std::endl; 
   std::cout << "MAX QV  " << max(slv.advectee(ix::qv)) << std::endl; 
   std::cout << "MAX QC  " << max(slv.advectee(ix::qc)) << std::endl; 
+  std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
 }
