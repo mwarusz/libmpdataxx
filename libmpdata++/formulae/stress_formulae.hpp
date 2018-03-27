@@ -429,26 +429,33 @@ namespace libmpdataxx
      
       // multiplication of compact vector components by constant molecular viscosity
       // 2D version
-      template <int nd, class arrvec_t, class real_t, class ijk_t>
+      template <int nd, opts_t opts, class arrvec_t, class real_t, class arr_t, class ijk_t>
       inline void multiply_vctr_cmpct(const arrvec_t &av,
                                      real_t coeff,
+                                     const arr_t &rho,
                                      const ijk_t &ijk,
                                      typename std::enable_if<nd == 2>::type* = 0)
       {
-        av[0](ijk[0] + h, ijk[1]) *= coeff;
-        av[1](ijk[0], ijk[1] + h) *= coeff;
+        av[0](ijk[0] + h, ijk[1]) *= coeff *
+                           0.5 * (G<opts, 0>(rho, ijk[0] + 1, ijk[1]) + G<opts, 0>(rho, ijk[0], ijk[1]));
+        av[1](ijk[0], ijk[1] + h) *= coeff *
+                           0.5 * (G<opts, 0>(rho, ijk[0], ijk[1] + 1) + G<opts, 0>(rho, ijk[0], ijk[1]));
       }
 
       // 3D version
-      template <int nd, class arrvec_t, class real_t, class ijk_t>
+      template <int nd, opts_t opts, class arrvec_t, class real_t, class arr_t, class ijk_t>
       inline void multiply_vctr_cmpct(const arrvec_t &av,
                                      real_t coeff,
+                                     const arr_t &rho,
                                      const ijk_t &ijk,
                                      typename std::enable_if<nd == 3>::type* = 0)
       {
-        av[0](ijk[0] + h, ijk[1], ijk[2]) *= coeff;
-        av[1](ijk[0], ijk[1] + h, ijk[2]) *= coeff;
-        av[2](ijk[0], ijk[1], ijk[2] + h) *= coeff;
+        av[0](ijk[0] + h, ijk[1], ijk[2]) *= coeff *
+                           0.5 * (G<opts, 0>(rho, ijk[0] + 1, ijk[1], ijk[2]) + G<opts, 0>(rho, ijk[0], ijk[1], ijk[2]));
+        av[1](ijk[0], ijk[1] + h, ijk[2]) *= coeff *
+                           0.5 * (G<opts, 0>(rho, ijk[0], ijk[1] + 1, ijk[2]) + G<opts, 0>(rho, ijk[0], ijk[1], ijk[2]));
+        av[2](ijk[0], ijk[1], ijk[2] + h) *= coeff *
+                           0.5 * (G<opts, 0>(rho, ijk[0], ijk[1], ijk[2] + 1) + G<opts, 0>(rho, ijk[0], ijk[1], ijk[2]));
       }
 
       // multiplication of compact vector components by variable eddy viscosity
@@ -481,7 +488,7 @@ namespace libmpdataxx
       {
         av[0](ijk[0] + h, ijk[1], ijk[2]) *= coeff *
                            0.5 * (k_m(ijk[0] + 1, ijk[1], ijk[2]) + k_m(ijk[0], ijk[1], ijk[2])) *
-                           0.5 * (G<opts, 0>(rho, ijk[0] + 1, ijk[1], ijk[2]) + G<opts, 0>(rho,ijk[0], ijk[1], ijk[2]));
+                           0.5 * (G<opts, 0>(rho, ijk[0] + 1, ijk[1], ijk[2]) + G<opts, 0>(rho, ijk[0], ijk[1], ijk[2]));
         
         av[1](ijk[0], ijk[1] + h, ijk[2]) *= coeff *
                            0.5 * (k_m(ijk[0], ijk[1] + 1, ijk[2]) + k_m(ijk[0], ijk[1], ijk[2])) *
@@ -494,26 +501,48 @@ namespace libmpdataxx
       
       // multiplication of compact tensor components by constant molecular viscosity
       // 2D version
-      template <int nd, class arrvec_t, class real_t, class ijk_t>
+      template <int nd, opts_t opts, class arrvec_t, class real_t, class arr_t, class ijk_t>
       inline void multiply_tnsr_cmpct(const arrvec_t &av,
                                       const real_t coeff,
+                                      const arr_t &rho,
                                       const ijk_t &ijk,
                                       typename std::enable_if<nd == 2>::type* = 0)
       {
-        multiply_vctr_cmpct<nd>(av, coeff, ijk);
-        av[2](ijk[0] + h, ijk[1] + h) *= coeff;
+        multiply_vctr_cmpct<nd, opts>(av, coeff, rho, ijk);
+        av[2](ijk[0] + h, ijk[1] + h) *= coeff *
+                                         0.25 * ( G<opts, 0>(rho, ijk[0] + 1, ijk[1]    )
+                                                + G<opts, 0>(rho, ijk[0]    , ijk[1]    )
+                                                + G<opts, 0>(rho, ijk[0] + 1, ijk[1] + 1)
+                                                + G<opts, 0>(rho, ijk[0]    , ijk[1] + 1)
+                                                );
       }
 
-      template <int nd, class arrvec_t, class real_t, class ijk_t>
+      template <int nd, opts_t opts, class arrvec_t, class real_t, class arr_t, class ijk_t>
       inline void multiply_tnsr_cmpct(const arrvec_t &av,
                                       const real_t coeff,
+                                      const arr_t &rho,
                                       const ijk_t &ijk,
                                       typename std::enable_if<nd == 3>::type* = 0)
       {
-        multiply_vctr_cmpct<nd>(av, coeff, ijk);
-        av[3](ijk[0] + h, ijk[1] + h, ijk[2]) *= coeff;
-        av[4](ijk[0] + h, ijk[1], ijk[2] + h) *= coeff;
-        av[5](ijk[0], ijk[1] + h, ijk[2] + h) *= coeff;
+        multiply_vctr_cmpct<nd, opts>(av, coeff, rho, ijk);
+        av[3](ijk[0] + h, ijk[1] + h, ijk[2]) *= coeff *
+                                                 0.25 * ( G<opts, 0>(rho, ijk[0] + 1, ijk[1]    , ijk[2])
+                                                        + G<opts, 0>(rho, ijk[0]    , ijk[1]    , ijk[2])
+                                                        + G<opts, 0>(rho, ijk[0] + 1, ijk[1] + 1, ijk[2])
+                                                        + G<opts, 0>(rho, ijk[0]    , ijk[1] + 1, ijk[2])
+                                                        );
+        av[4](ijk[0] + h, ijk[1], ijk[2] + h) *= coeff *
+                                                 0.25 * ( G<opts, 0>(rho, ijk[0] + 1, ijk[1], ijk[2]    )
+                                                        + G<opts, 0>(rho, ijk[0]    , ijk[1], ijk[2]    )
+                                                        + G<opts, 0>(rho, ijk[0] + 1, ijk[1], ijk[2] + 1)
+                                                        + G<opts, 0>(rho, ijk[0]    , ijk[1], ijk[2] + 1)
+                                                        );
+        av[5](ijk[0], ijk[1] + h, ijk[2] + h) *= coeff *
+                                                 0.25 * ( G<opts, 0>(rho, ijk[0], ijk[1]    , ijk[2] + 1)
+                                                        + G<opts, 0>(rho, ijk[0], ijk[1]    , ijk[2]    )
+                                                        + G<opts, 0>(rho, ijk[0], ijk[1] + 1, ijk[2] + 1)
+                                                        + G<opts, 0>(rho, ijk[0], ijk[1] + 1, ijk[2]    )
+                                                        );
       }
 
       // multiplication of compact tensor components by variable eddy viscosity
