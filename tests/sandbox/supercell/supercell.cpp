@@ -39,9 +39,9 @@ int main()
   const int np = 65;
   const int scale = 256 / (np - 1);
 
-  const T sim_time = 2400;
+  const T sim_time = 7200;
 
-  const int nx = np, ny = np, nz = 41, nt = sim_time / scale;
+  const int nx = np, ny = np, nz = 41;
 
   using slv_out_t = output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
