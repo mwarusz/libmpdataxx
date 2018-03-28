@@ -19,6 +19,7 @@ int main()
   struct ct_params_t : ct_params_default_t
   {
     using real_t = T;
+    enum { var_dt = true};
     enum { sgs_scheme = solvers::dns};
     enum { stress_diff = solvers::compact};
     enum { opts = opts::nug | opts::iga | opts::fct};
@@ -38,7 +39,9 @@ int main()
   const int np = 65;
   const int scale = 256 / (np - 1);
 
-  const int nx = np, ny = np, nz = 41, nt = 2400 / scale;
+  const T sim_time = 2400;
+
+  const int nx = np, ny = np, nz = 41, nt = sim_time / scale;
 
   using slv_out_t = output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
@@ -62,8 +65,9 @@ int main()
   
   p.buoy_filter = true;
   p.eta = 500;
+  p.max_courant = 0.9;
 
-  p.outfreq = 100 / scale;
+  p.outfreq = 10 * 60;
   p.outvars = {
     {ix::qv, {"qv", "?"  }},
     {ix::qc, {"qc", "?"  }},
@@ -243,7 +247,7 @@ int main()
   std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
 
   // integration
-  slv.advance(nt);  
+  slv.advance(sim_time);  
 
   std::cout.precision(18);
   std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 
