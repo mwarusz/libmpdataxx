@@ -20,7 +20,7 @@ int main()
   {
     using real_t = T;
     enum { sgs_scheme = solvers::dns};
-    enum { sgs_diff = solvers::compact};
+    enum { stress_diff = solvers::compact};
     enum { opts = opts::nug | opts::iga | opts::fct};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
@@ -35,7 +35,10 @@ int main()
   using ix = typename ct_params_t::ix;
   using real_t = typename ct_params_t::real_t;
 
-  const int nx = 257, ny = 257, nz = 41, nt = 2400;
+  const int np = 65;
+  const int scale = 256 / (np - 1);
+
+  const int nx = np, ny = np, nz = 41, nt = 2400 / scale;
 
   using slv_out_t = output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
@@ -49,7 +52,7 @@ int main()
   T dy = length_y / (ny - 1);
   T dz = length_z / (nz - 1);
 
-  p.dt = 3.0;
+  p.dt = 3.0 * scale;
   p.di = dx;
   p.dj = dy;
   p.dk = dz; 
@@ -60,7 +63,7 @@ int main()
   p.buoy_filter = true;
   p.eta = 500;
 
-  p.outfreq = 100;
+  p.outfreq = 100 / scale;
   p.outvars = {
     {ix::qv, {"qv", "?"  }},
     {ix::qc, {"qc", "?"  }},
