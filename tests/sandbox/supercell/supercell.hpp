@@ -22,7 +22,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   const real_t buoy_eps = 0.608;
   real_t g;
   bool buoy_filter;
-  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2;
+  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e;
   libmpdataxx::arrvec_t<typename parent_t::arr_t> &grad_aux;
 
   template <int nd = ct_params_t::n_dims> 
@@ -62,8 +62,30 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     );
   }
 
+  void vip_rhs_expl_calc()
+  {
+    this->state(ix::u)(this->ijk) -= u_e(this->ijk);
+    parent_t::vip_rhs_expl_calc();
+    this->state(ix::u)(this->ijk) += u_e(this->ijk);
+  }
+
   void diffusion()
   {
+    //const libmpdataxx::rng_t ir(0, 128);
+    //const libmpdataxx::rng_t jr(0, 128);
+    //const libmpdataxx::rng_t kr(1, 39);
+    //this->mem->barrier();
+    //if (this->rank == 0)
+    //{
+    //  std::cout << "timestep: " << this->timestep << std::endl;
+    //  std::cout << "dt: " << this->dt << std::endl;
+    //  std::cout << "ftht max: " << max(abs(this->rhs.at(ix::tht)(ir, jr, kr))) << std::endl;
+    //  std::cout << "fqv  max: " << max(abs(this->rhs.at(ix::qv)(ir, jr, kr))) << std::endl;
+    //  std::cout << "fqc  max: " << max(abs(this->rhs.at(ix::qc)(ir, jr, kr))) << std::endl;
+    //  std::cout << "fqr  max: " << max(abs(this->rhs.at(ix::qr)(ir, jr, kr))) << std::endl;
+    //}
+    //this->mem->barrier();
+
     const auto &ijk = this->ijk;
 
     auto &tht = this->state(ix::tht);
@@ -74,8 +96,20 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     using namespace libmpdataxx::formulae;
 
     // tht
-    this->xchng_pres(tht, ijk);
-    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tht, ijk, this->ijkm, this->dijk);
+    tmp1(ijk) = tht(ijk) - tht_e(ijk);
+    this->xchng_pres(tmp1, ijk);
+    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tmp1, ijk, this->ijkm, this->dijk);
+
+    //using namespace libmpdataxx::arakawa_c;
+    //this->mem->barrier();
+    //if (this->rank == 0)
+    //{
+    //  std::cout << "tht_dz  max: " << max(abs(grad_aux[2](ir, jr, kr + h))) << std::endl;
+    //  std::cout << "tht_dzz max: " << max(abs(grad_aux[2](ir, jr, kr + h) - grad_aux[2](ir, jr, kr - h))) / this->dk << std::endl;
+    //}
+    //this->mem->barrier();
+
+    this->mem->barrier();
     stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
                                                                         3.0 * this->eta,
                                                                         *this->mem->G,
@@ -87,8 +121,10 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
                                                                                                     ijk,
                                                                                                     this->dijk);
     // qv
-    this->xchng_pres(qv, ijk);
-    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, qv, ijk, this->ijkm, this->dijk);
+    tmp1(ijk) = qv(ijk) - qv_e(ijk);
+    this->xchng_pres(tmp1, ijk);
+    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tmp1, ijk, this->ijkm, this->dijk);
+    this->mem->barrier();
     stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
                                                                         3.0 * this->eta,
                                                                         *this->mem->G,
@@ -102,6 +138,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     // qc
     this->xchng_pres(qc, ijk);
     nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, qc, ijk, this->ijkm, this->dijk);
+    this->mem->barrier();
     stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
                                                                         3.0 * this->eta,
                                                                         *this->mem->G,
@@ -115,6 +152,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     // qr
     this->xchng_pres(qr, ijk);
     nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, qr, ijk, this->ijkm, this->dijk);
+    this->mem->barrier();
     stress::multiply_vctr_cmpct<ct_params_t::n_dims, ct_params_t::opts>(grad_aux,
                                                                         3.0 * this->eta,
                                                                         *this->mem->G,
@@ -125,6 +163,16 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
                                                                                                    *this->mem->G,
                                                                                                    ijk,
                                                                                                    this->dijk);
+   
+    //this->mem->barrier();
+    //if (this->rank == 0)
+    //{
+    //  std::cout << "ftht max: " << max(abs(this->rhs.at(ix::tht)(ir, jr, kr))) << std::endl;
+    //  std::cout << "fqv  max: " << max(abs(this->rhs.at(ix::qv)(ir, jr, kr))) << std::endl;
+    //  std::cout << "fqc  max: " << max(abs(this->rhs.at(ix::qc)(ir, jr, kr))) << std::endl;
+    //  std::cout << "fqr  max: " << max(abs(this->rhs.at(ix::qr)(ir, jr, kr))) << std::endl;
+    //}
+    //this->mem->barrier();
   }
 
   // explicit forcings 
@@ -302,7 +350,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     qv_e(args.mem->tmp[__FILE__][3][0]),
     tmp1(args.mem->tmp[__FILE__][4][0]),
     tmp2(args.mem->tmp[__FILE__][4][1]),
-    grad_aux(args.mem->tmp[__FILE__][5])
+    u_e(args.mem->tmp[__FILE__][5][0]),
+    grad_aux(args.mem->tmp[__FILE__][6])
   {}
 
   static void alloc(typename parent_t::mem_t *mem, const int &n_iters)
@@ -313,6 +362,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "pk_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "qv_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 2); // tmp1, tmp2
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "u_e");
     parent_t::alloc_tmp_vctr(mem, __FILE__); // grad_aux
   }
 };

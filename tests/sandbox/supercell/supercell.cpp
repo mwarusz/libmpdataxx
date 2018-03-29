@@ -132,6 +132,7 @@ int main()
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
       wk_T(k) = wk_tht(k) * std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
+
     }
   
     const auto& tht_e = slv.sclr_array("tht_e");
@@ -193,6 +194,7 @@ int main()
         u_e = U_s - U_c;
       }
       slv.advectee(ix::u)(i_r, j_r, k) = u_e;
+      slv.sclr_array("u_e")(i_r, j_r, k) = u_e;
     }
 
   const T r0x = 10e3;
@@ -227,7 +229,23 @@ int main()
     slv.vab_relaxed_state(1) = 0;
     slv.vab_relaxed_state(2) = 0;
   
+    for (int k = k_r.first(); k <= k_r.last(); ++k)
+    {
+      std::cout
+        << k * dz << ' '
+        << wk_p(k) << ' '
+        << wk_tht(k) << ' '
+        << wk_T(k) << ' '
+        << wk_RH(k) << ' '
+        << qv_e(0, 0, k) << ' '
+        << slv.advectee(ix::u)(0, 0, k) << ' '
+        << rho_b(0, 0, k) << ' '
+        << tht_b(0, 0, k) << ' '
+        << rho_b(0, 0, k)
+        << std::endl;
+    }
   }
+  
 
   std::cout.precision(18);
   std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 

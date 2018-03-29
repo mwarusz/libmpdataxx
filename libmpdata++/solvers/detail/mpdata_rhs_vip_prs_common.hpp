@@ -84,15 +84,15 @@ namespace libmpdataxx
 	void ini_pressure()
 	{ 
 	  Phi(this->ijk) = 0;
-          int npoints = 1;
-          for (int d = 0; d < parent_t::n_dims; ++d)
-          {
-	    Phi(this->ijk) -= 0.5 * pow2(this->vips()[d](this->ijk));
-            npoints *= (this->mem->grid_size[d].last() + 1);
-          }
-          
-          auto Phi_mean = prs_sum(Phi, this->ijk) / npoints;
-	  Phi(this->ijk) -= Phi_mean;
+          //int npoints = 1;
+          //for (int d = 0; d < parent_t::n_dims; ++d)
+          //{
+	  //  Phi(this->ijk) -= 0.5 * pow2(this->vips()[d](this->ijk));
+          //  npoints *= (this->mem->grid_size[d].last() + 1);
+          //}
+          //
+          //auto Phi_mean = prs_sum(Phi, this->ijk) / npoints;
+	  //Phi(this->ijk) -= Phi_mean;
 	}
 
 	virtual void pressure_solver_loop_init(bool) = 0;
