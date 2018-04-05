@@ -13,13 +13,13 @@ using T = double;
 
 const T pi = std::acos(-1.0);
 
-int main() 
+void test(T eta, const int np, const std::string &name)
 {
   // compile-time parameters
   struct ct_params_t : ct_params_default_t
   {
     using real_t = T;
-    enum { var_dt = true};
+    enum { var_dt = false};
     enum { sgs_scheme = solvers::dns};
     enum { stress_diff = solvers::compact};
     enum { opts = opts::nug | opts::iga | opts::fct};
@@ -36,26 +36,35 @@ int main()
   using ix = typename ct_params_t::ix;
   using real_t = typename ct_params_t::real_t;
 
-  const int np = 65;
-  const int scale = 256 / (np - 1);
+  const int scale = 336 / np;
 
   const T sim_time = 7200;
 
-  const int nx = np, ny = np, nz = 41;
+  const int nx = np + 1, ny = np + 1, nz = 41;
 
   using slv_out_t = output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
   slv_out_t::rt_params_t p;
 
-  T length_x = 128e3;
-  T length_y = 128e3;
+  T length_x = 168e3;
+  T length_y = 168e3;
   T length_z = 20e3;
 
   T dx = length_x / (nx - 1);
   T dy = length_y / (ny - 1);
   T dz = length_z / (nz - 1);
 
-  p.dt = 3.0 * scale;
+  if (ct_params_t::var_dt)
+  {
+    p.dt = 3.0 * scale;
+  }
+  else
+  {
+    p.dt = 5;
+  }
+
+  int nt = sim_time / p.dt;
+
   p.di = dx;
   p.dj = dy;
   p.dk = dz; 
@@ -64,10 +73,21 @@ int main()
   p.n_iters = 2;
   
   p.buoy_filter = true;
-  p.eta = 500;
-  p.max_courant = 0.9;
+  p.eta = eta;
+  
+  if (ct_params_t::var_dt)
+  {
+    p.max_courant = 0.9;
+  }
 
-  p.outfreq = 10 * 60;
+  if (ct_params_t::var_dt)
+  {
+    p.outfreq = 10 * 60;
+  }
+  else
+  {
+    p.outfreq = nt / 24;
+  }
   p.outvars = {
     {ix::qv, {"qv", "?"  }},
     {ix::qc, {"qc", "?"  }},
@@ -77,7 +97,7 @@ int main()
     {ix::v, {"v", "?"  }},
     {ix::w, {"w", "?"  }}
   };
-  p.outdir = "out";
+  p.outdir = name + "_" + std::to_string(np);
 
   libmpdataxx::concurr::threads<
     slv_out_t, 
@@ -159,12 +179,20 @@ int main()
 
     const T stab = 1.020e-5;
     const T cs_v = p.g / (cp * 300. * stab);
+
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
       T z = k * dz;
       tht_b(i_r, j_r, k) = 300 * std::exp(stab * z);
       rho_b(i_r, j_r, k) = 1.11 * std::exp(-stab * z) * std::pow(1 - cs_v * (1 - std::exp(-stab * z)), 1. / R_d_over_c_pd_v - 1);
     }
+    
+    //for (int k = k_r.first(); k <= k_r.last(); ++k)
+    //{
+    //  T z = k * dz;
+    //  tht_b(i_r, j_r, k) = 300;
+    //  rho_b(i_r, j_r, k) = 1.11 * std::pow(1. - R_d_over_c_pd_v * z / 7.e3, 1. / R_d_over_c_pd_v - 1);
+    //}
 
     slv.advectee(ix::v) = 0;
     slv.advectee(ix::w) = 0;
@@ -229,23 +257,25 @@ int main()
     slv.vab_relaxed_state(1) = 0;
     slv.vab_relaxed_state(2) = 0;
   
-    for (int k = k_r.first(); k <= k_r.last(); ++k)
-    {
-      std::cout
-        << k * dz << ' '
-        << wk_p(k) << ' '
-        << wk_tht(k) << ' '
-        << wk_T(k) << ' '
-        << wk_RH(k) << ' '
-        << qv_e(0, 0, k) << ' '
-        << slv.advectee(ix::u)(0, 0, k) << ' '
-        << rho_b(0, 0, k) << ' '
-        << tht_b(0, 0, k) << ' '
-        << rho_b(0, 0, k)
-        << std::endl;
-    }
+    //for (int k = k_r.first(); k <= k_r.last(); ++k)
+    //{
+    //  std::cout
+    //    << k * dz << ' '
+    //    << wk_p(k) << ' '
+    //    << wk_tht(k) << ' '
+    //    << wk_T(k) << ' '
+    //    << wk_RH(k) << ' '
+    //    << qv_e(0, 0, k) << ' '
+    //    << slv.advectee(ix::u)(0, 0, k) << ' '
+    //    << rho_b(0, 0, k) << ' '
+    //    << tht_b(0, 0, k) << ' '
+    //    << rho_b(0, 0, k)
+    //    << std::endl;
+    //}
   }
   
+
+  std::cout << "Calculating: " << p.outdir << std::endl; 
 
   std::cout.precision(18);
   std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 
@@ -265,7 +295,14 @@ int main()
   std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
 
   // integration
-  slv.advance(sim_time);  
+  if (ct_params_t::var_dt)
+  {
+    slv.advance(sim_time);
+  }
+  else
+  {
+    slv.advance(nt);
+  }
 
   std::cout.precision(18);
   std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 
@@ -281,4 +318,15 @@ int main()
   std::cout << "MAX QV  " << max(slv.advectee(ix::qv)) << std::endl; 
   std::cout << "MAX QC  " << max(slv.advectee(ix::qc)) << std::endl; 
   std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
+}
+
+int main() 
+{
+  std::vector<int> nps = {84};
+  //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
+  for (const auto np : nps)
+  {
+    test(500, np, "out_mdiff_cdt");
+    //test(0, np, "out_iles_cdt");
+  }
 }
