@@ -188,11 +188,14 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     const auto &ijk = this->ijk;
 
     auto ix_w = this->vip_ixs[ct_params_t::n_dims - 1];
+    const auto &tht_abs = *this->mem->vab_coeff;
 
     switch (at)
     {
       case (0):
       {
+        rhs.at(ix::tht)(ijk) += -tht_abs(ijk) * (this->state(ix::tht)(ijk) - tht_e(ijk));
+
         if (!buoy_filter)
         {
           rhs.at(ix_w)(ijk) += buoy_at_0(ijk);
@@ -207,6 +210,11 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       }
       case (1):
       {
+        rhs.at(ix::tht)(ijk) += -tht_abs(ijk) *
+                  ( (this->state(ix::tht)(ijk) + 0.5 * this->dt * tht_abs(ijk) * this->tht_e(ijk))
+                    / (1 + 0.5 * this->dt * tht_abs(ijk))
+                   - this->tht_e(ijk) );
+
         if (!buoy_filter)
         {
           rhs.at(ix_w)(ijk) += buoy_at_1(ijk);
