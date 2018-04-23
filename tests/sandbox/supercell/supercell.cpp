@@ -19,7 +19,8 @@ void test(T eta, const int np, const std::string &name)
   struct ct_params_t : ct_params_default_t
   {
     using real_t = T;
-    enum { var_dt = false};
+    enum { impl_tht = false};
+    enum { var_dt = true};
     enum { sgs_scheme = solvers::dns};
     enum { stress_diff = solvers::compact};
     enum { opts = opts::nug | opts::iga | opts::fct};
@@ -60,7 +61,7 @@ void test(T eta, const int np, const std::string &name)
   }
   else
   {
-    p.dt = 5;
+    p.dt = 10.0;
   }
 
   int nt = sim_time / p.dt;
@@ -200,7 +201,15 @@ void test(T eta, const int np, const std::string &name)
     slv.advectee(ix::qr) = 0;
     
     slv.advectee(ix::qv)(i_r, j_r, k_r) = qv_e(i_r, j_r, k_r);
-    slv.advectee(ix::tht)(i_r, j_r, k_r) = tht_e(i_r, j_r, k_r);
+
+    if (ct_params_t::impl_tht)
+    {
+      slv.advectee(ix::tht)(i_r, j_r, k_r) = 0;
+    }
+    else
+    {
+      slv.advectee(ix::tht)(i_r, j_r, k_r) = tht_e(i_r, j_r, k_r);
+    }
 
     T U_s = 30, U_c = 15;
     T z_s = 5e3, dz_u = 1e3;
@@ -322,11 +331,13 @@ void test(T eta, const int np, const std::string &name)
 
 int main() 
 {
-  std::vector<int> nps = {84};
+  std::vector<int> nps = {168 * 2};
   //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
   for (const auto np : nps)
   {
-    test(500, np, "out_mdiff_cdt");
+    //test(500, np, "out_mdiff_cdt");
     //test(0, np, "out_iles_cdt");
+    //test(500, np, "out_pdiff_cdt5");
+    test(500, np, "out_pdiff_vdt9");
   }
 }

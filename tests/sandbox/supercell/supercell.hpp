@@ -22,8 +22,15 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   const real_t buoy_eps = 0.608;
   real_t g;
   bool buoy_filter;
-  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e;
+  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e;
   libmpdataxx::arrvec_t<typename parent_t::arr_t> &grad_aux;
+
+  template <int nd = ct_params_t::n_dims> 
+  void calc_dtht_e(typename std::enable_if<nd == 3>::type* = 0)
+  {
+    this->xchng_sclr(this->tht_e, this->ijk);
+    this->dtht_e(this->ijk) = libmpdataxx::formulae::nabla::grad<2>(this->tht_e, this->k, this->i, this->j, this->dk);
+  }
 
   template <int nd = ct_params_t::n_dims> 
   void filter(typename std::enable_if<nd == 3>::type* = 0)
@@ -62,6 +69,34 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     );
   }
 
+  virtual void normalize_vip(const libmpdataxx::arrvec_t<typename parent_t::arr_t> &v)
+  {
+    if (ct_params_t::impl_tht)
+    {
+      const auto &tht_abs = *this->mem->vab_coeff;
+      if (static_cast<libmpdataxx::solvers::vip_vab_t>(ct_params_t::vip_vab) == libmpdataxx::solvers::impl)
+      {
+        for (int d = 0; d < ct_params_t::n_dims - 1; ++d)
+        {
+          v[d](this->ijk) /= (1 + 0.5 * this->dt * (*this->mem->vab_coeff)(this->ijk));
+        }
+        v[ct_params_t::n_dims - 1](this->ijk) /=
+        (1 + 0.5 * this->dt * (*this->mem->vab_coeff)(this->ijk)
+           + 0.25 * this->dt * this->dt * this->g / this->tht_b(this->ijk) * this->dtht_e(this->ijk)
+             / (1 + 0.5 * this->dt * tht_abs(this->ijk)));
+      }
+      else
+      {
+        v[ct_params_t::n_dims - 1](this->ijk) /=
+        (1 + 0.25 * this->dt * this->dt * this->g / this->tht_b(this->ijk) * this->dtht_e(this->ijk)
+             / (1 + 0.5 * this->dt * tht_abs(this->ijk)));
+      }
+    }
+    else
+    {
+      parent_t::normalize_vip(v);
+    }
+  }
   void vip_rhs_expl_calc()
   {
     this->state(ix::u)(this->ijk) -= u_e(this->ijk);
@@ -96,9 +131,17 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     using namespace libmpdataxx::formulae;
 
     // tht
-    tmp1(ijk) = tht(ijk) - tht_e(ijk);
-    this->xchng_pres(tmp1, ijk);
-    nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tmp1, ijk, this->ijkm, this->dijk);
+    if (!ct_params_t::impl_tht)
+    {
+      tmp1(ijk) = tht(ijk) - tht_e(ijk);
+      this->xchng_pres(tmp1, ijk);
+      nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tmp1, ijk, this->ijkm, this->dijk);
+    }
+    else
+    {
+      this->xchng_pres(tht, ijk);
+      nabla::calc_grad_cmpct<parent_t::n_dims>(grad_aux, tht, ijk, this->ijkm, this->dijk);
+    }
 
     //using namespace libmpdataxx::arakawa_c;
     //this->mem->barrier();
@@ -175,59 +218,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     //this->mem->barrier();
   }
 
-  // explicit forcings 
-  void update_rhs(
-    libmpdataxx::arrvec_t<
-      typename parent_t::arr_t
-    > &rhs, 
-    const real_t &dt, 
-    const int &at 
-  ) {
-    parent_t::update_rhs(rhs, dt, at); 
-
-    const auto &ijk = this->ijk;
-
-    auto ix_w = this->vip_ixs[ct_params_t::n_dims - 1];
-    const auto &tht_abs = *this->mem->vab_coeff;
-
-    switch (at)
-    {
-      case (0):
-      {
-        rhs.at(ix::tht)(ijk) += -tht_abs(ijk) * (this->state(ix::tht)(ijk) - tht_e(ijk));
-
-        if (!buoy_filter)
-        {
-          rhs.at(ix_w)(ijk) += buoy_at_0(ijk);
-        }
-        else
-        {
-          tmp1(ijk) = buoy_at_0(ijk);
-          filter();
-          rhs.at(ix_w)(ijk) += (tmp2)(ijk);
-        }
-        break;
-      }
-      case (1):
-      {
-        rhs.at(ix::tht)(ijk) += -tht_abs(ijk) *
-                  ( (this->state(ix::tht)(ijk) + 0.5 * this->dt * tht_abs(ijk) * this->tht_e(ijk))
-                    / (1 + 0.5 * this->dt * tht_abs(ijk))
-                   - this->tht_e(ijk) );
-
-        if (!buoy_filter)
-        {
-          rhs.at(ix_w)(ijk) += buoy_at_1(ijk);
-        }
-        else
-        {
-          tmp1(ijk) = buoy_at_1(ijk);
-          filter();
-          rhs.at(ix_w)(ijk) += (tmp2)(ijk);
-        }
-      }
-    }
-  }
 
   template <typename arr_1d_t>
   void kessler(arr_1d_t qv, arr_1d_t qc, arr_1d_t qr, arr_1d_t theta, arr_1d_t rho, arr_1d_t pk, int nz)
@@ -315,9 +305,30 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     precl /= rainsplit;
   }
 
-  void hook_post_step()
+  void hook_ante_loop(const typename parent_t::advance_arg_t nt) 
   {
-    parent_t::hook_post_step();
+    if (ct_params_t::impl_tht)
+    {
+      calc_dtht_e();
+    }
+    parent_t::hook_ante_loop(nt);
+  }
+  
+  // explicit forcings 
+  void update_rhs(
+    libmpdataxx::arrvec_t<
+      typename parent_t::arr_t
+    > &rhs, 
+    const real_t &dt, 
+    const int &at 
+  ) {
+    parent_t::update_rhs(rhs, dt, at); 
+    
+    if (ct_params_t::impl_tht)
+    {
+      tmp2(this->ijk) = this->state(ix::tht)(this->ijk) + tht_e(this->ijk);
+    } 
+    
     for (int i = this->i.first(); i <= this->i.last(); ++i)
     {
       for (int j = this->j.first(); j <= this->j.last(); ++j)
@@ -327,11 +338,144 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   	qv_c     = this->state(ix::qv)(i, j, this->k).reindex(0),
   	qc_c     = this->state(ix::qc)(i, j, this->k).reindex(0),
   	qr_c     = this->state(ix::qr)(i, j, this->k).reindex(0),
-  	tht_c    = this->state(ix::tht)(i, j, this->k).reindex(0),
   	pk_c     = pk_e(i, j, this->k).reindex(0);
-        kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
+       
+        if (ct_params_t::impl_tht)
+        {
+          auto
+          tht_c    = tmp2(i, j, this->k).reindex(0);
+          kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
+        }
+        else
+        {
+          auto
+          tht_c    = this->state(ix::tht)(i, j, this->k).reindex(0);
+          kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
+        }
       }
     }
+    
+    if (ct_params_t::impl_tht)
+    {
+      this->state(ix::tht)(this->ijk) = tmp2(this->ijk) - tht_e(this->ijk);
+    } 
+
+    const auto &ijk = this->ijk;
+    auto ix_w = this->vip_ixs[ct_params_t::n_dims - 1];
+    const auto &tht_abs = *this->mem->vab_coeff;
+
+    if (!ct_params_t::impl_tht)
+    {
+      switch (at)
+      {
+        case (0):
+        {
+          rhs.at(ix::tht)(ijk) += -tht_abs(ijk) * (this->state(ix::tht)(ijk) - tht_e(ijk));
+
+          if (!buoy_filter)
+          {
+            rhs.at(ix_w)(ijk) += buoy_at_0(ijk);
+          }
+          else
+          {
+            tmp1(ijk) = buoy_at_0(ijk);
+            filter();
+            rhs.at(ix_w)(ijk) += (tmp2)(ijk);
+          }
+          break;
+        }
+        case (1):
+        {
+          rhs.at(ix::tht)(ijk) += -tht_abs(ijk) *
+                    ( (this->state(ix::tht)(ijk) + 0.5 * this->dt * tht_abs(ijk) * this->tht_e(ijk))
+                      / (1 + 0.5 * this->dt * tht_abs(ijk))
+                     - this->tht_e(ijk) );
+
+          if (!buoy_filter)
+          {
+            rhs.at(ix_w)(ijk) += buoy_at_1(ijk);
+          }
+          else
+          {
+            tmp1(ijk) = buoy_at_1(ijk);
+            filter();
+            rhs.at(ix_w)(ijk) += (tmp2)(ijk);
+          }
+        }
+      }
+    }
+    else
+    {
+      const auto &tht = this->state(ix::tht); 
+      const auto &w = this->state(ix_w);
+
+      switch (at)
+      {
+        case (0):
+        {
+          rhs.at(ix::tht)(ijk) += -w(ijk) * this->dtht_e(ijk) - tht_abs(ijk) * tht(ijk);
+
+          rhs.at(ix_w)(ijk) += this->g * (
+                  ( tht(ijk) / this->tht_b(ijk)
+                  + buoy_eps * (this->state(ix::qv)(ijk) - this->qv_e(ijk))
+                  - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
+                  ));
+
+          break;
+        }
+        case (1):
+        {
+          rhs.at(ix::tht)(ijk) += (-tht_abs(ijk) * tht(ijk))
+                                  / (1 + 0.5 * this->dt * tht_abs(ijk));
+
+          rhs.at(ix_w)(ijk) += this->g * (
+                  ( (tht(ijk) + 0.5 * this->dt * rhs.at(ix::tht)(ijk))  / this->tht_b(ijk)
+                  + buoy_eps * (this->state(ix::qv)(ijk) - this->qv_e(ijk))
+                  - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
+                  ));
+          break;
+        }
+      }
+    }
+  }
+
+  void vip_rhs_impl_fnlz()
+  {
+    parent_t::vip_rhs_impl_fnlz();
+   
+    if (ct_params_t::impl_tht)
+    {
+      const auto &w = this->vips()[ct_params_t::n_dims - 1];
+      this->state(ix::tht)(this->ijk) += - 0.5 * this->dt * w(this->ijk) * this->dtht_e(this->ijk);
+      this->rhs.at(ix::tht)(this->ijk) += -w(this->ijk) * this->dtht_e(this->ijk);
+    }
+  }
+
+  void hook_post_step()
+  {
+    parent_t::hook_post_step();
+
+    if ((this->timestep % 60) == 0)
+    {
+      auto cfl = this->courant_number(this->mem->GC);
+      this->mem->barrier();
+      const libmpdataxx::rng_t ir(0, 84*4);
+      const libmpdataxx::rng_t jr(0, 84*4);
+      const libmpdataxx::rng_t kr(0, 40);
+      if (this->rank == 0)
+      {
+        auto qv_max     = max(this->state(ix::qv)(ir, jr, kr));
+        auto qv_min     = min(this->state(ix::qv)(ir, jr, kr));
+        auto w_max     = max(this->state(ix::w)(ir, jr, kr));
+        auto w_min     = min(this->state(ix::w)(ir, jr, kr));
+        std::cout << "time: " << this->time  << std::endl;
+        std::cout << "cfl: " << cfl  << std::endl;
+        std::cout << "qv: " << qv_min << ' ' << qv_max << std::endl;
+        std::cout << "w: " << w_min << ' ' << w_max << std::endl;
+      }
+      this->mem->barrier();
+    }
+
 
     diffusion();
   }
@@ -359,7 +503,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     tmp1(args.mem->tmp[__FILE__][4][0]),
     tmp2(args.mem->tmp[__FILE__][4][1]),
     u_e(args.mem->tmp[__FILE__][5][0]),
-    grad_aux(args.mem->tmp[__FILE__][6])
+    dtht_e(args.mem->tmp[__FILE__][6][0]),
+    grad_aux(args.mem->tmp[__FILE__][7])
   {}
 
   static void alloc(typename parent_t::mem_t *mem, const int &n_iters)
@@ -371,6 +516,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "qv_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 2); // tmp1, tmp2
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "u_e");
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "dtht_e");
     parent_t::alloc_tmp_vctr(mem, __FILE__); // grad_aux
   }
 };
