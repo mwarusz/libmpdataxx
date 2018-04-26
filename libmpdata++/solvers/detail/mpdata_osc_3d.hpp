@@ -73,6 +73,7 @@ namespace libmpdataxx
 	void advop(int e)
 	{
 	  this->fct_init(e);
+	  this->adjust_GC(e);
 
 	  for (int iter = 0; iter < this->n_iters; ++iter) 
 	  {
@@ -162,7 +163,8 @@ namespace libmpdataxx
             }
             
             auto &flx = (*(this->flux_ptr));
-            this->xchng_flux(flx);
+            if (e != 6) this->xchng_flux(flx);
+            //this->xchng_flux(flx);
 
             // sanity check for input
             assert(std::isfinite(sum(psi[n](ijk))));

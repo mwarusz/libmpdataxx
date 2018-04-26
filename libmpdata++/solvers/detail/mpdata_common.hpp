@@ -61,6 +61,7 @@ namespace libmpdataxx
 
 	// for Flux-Corrected Transport 
 	virtual void fct_init(int e) { }
+	virtual void adjust_GC(int e) { }
 	virtual void fct_adjust_antidiff(int e, int iter) { }
 
         //  

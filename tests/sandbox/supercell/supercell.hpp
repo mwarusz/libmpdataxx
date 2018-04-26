@@ -8,6 +8,8 @@
 #include <libmpdata++/solvers/boussinesq.hpp>
 #include <algorithm>
 
+using namespace libmpdataxx::arakawa_c;
+
 template <class ct_params_t>
 class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_t>
 {
@@ -15,15 +17,92 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
 
   public:
   using real_t = typename ct_params_t::real_t;
+  
 
   protected:
   // member fields
   using ix = typename ct_params_t::ix;
   const real_t buoy_eps = 0.608;
-  real_t g;
+  real_t g, cp, Rd;
   bool buoy_filter;
   typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e;
   libmpdataxx::arrvec_t<typename parent_t::arr_t> &grad_aux;
+    const libmpdataxx::rng_t ir;
+    const libmpdataxx::rng_t jr;
+    const libmpdataxx::rng_t kr;
+  
+  void print_stats(const std::string& str)
+  {
+    this->mem->barrier();
+    if (this->rank == 0)
+    {
+      auto tht_max     = max(this->state(ix::tht)(ir, jr, kr));
+      auto tht_min     = min(this->state(ix::tht)(ir, jr, kr));
+      auto qr_max     = max(this->state(ix::qr)(ir, jr, kr));
+      auto qr_min     = min(this->state(ix::qr)(ir, jr, kr));
+      
+      auto qv_max     = max(this->state(ix::qv)(ir, jr, kr));
+      auto qv_min     = min(this->state(ix::qv)(ir, jr, kr));
+      auto qv_sum     = sum(this->state(ix::qv)(ir, jr, kr));
+      
+      auto qc_max     = max(this->state(ix::qc)(ir, jr, kr));
+      auto qc_min     = min(this->state(ix::qc)(ir, jr, kr));
+      auto qc_sum     = sum(this->state(ix::qc)(ir, jr, kr));
+
+      auto u_min     = min(this->state(ix::u)(ir, jr, kr));
+      auto u_max     = max(this->state(ix::u)(ir, jr, kr));
+      auto u_sum     = sum(this->state(ix::u)(ir, jr, kr));
+
+      auto w_min     = min(this->state(ix::w)(ir, jr, kr));
+      auto w_max     = max(this->state(ix::w)(ir, jr, kr));
+      auto w_sum     = sum(this->state(ix::w)(ir, jr, kr));
+      std::cout << str << std::endl;
+      std::cout << "ux: " << u_min << ' ' << u_max << ' ' << u_sum << std::endl;
+      std::cout << "uz: " << w_min << ' ' << w_max << ' ' << w_sum << std::endl;
+      std::cout << "qv: " << qv_min << ' ' << qv_max << ' ' << qv_sum << std::endl;
+      std::cout << "qc: " << qc_min << ' ' << qc_max << ' ' << qc_sum << std::endl;
+    }
+    this->mem->barrier();
+  }
+
+  void adjust_GC(int e) override
+  {
+    using namespace libmpdataxx::arakawa_c;
+    
+    auto &tht = this->state(ix::tht);
+    auto &qr = this->state(ix::qr);
+    auto &rho = *this->mem->G;
+
+    if (e == 6)
+    {
+      for (int i = this->i.first(); i <= this->i.last(); ++i)
+      {
+        for (int j = this->j.first(); j <= this->j.last(); ++j)
+        {
+          real_t rho_h = 0.5 * (3 * rho(i, j, 0) - rho(i, j, 1));
+          real_t qr_h = std::max(0.5 * (3 * qr(i, j, 0) - qr(i, j, 1)), 0.);
+          real_t rho_g = rho(i, j, 0);
+          this->mem->GC[2](i, j, 0 - h) -= 36.34 * rho_h * this->dt / this->dk * 
+            std::pow(1e-3 * rho_h * qr_h, 0.1364) * std::pow(rho_h / rho_g, -0.5);
+          for (int k = this->k.first(); k <= this->k.last() - 1; ++k)
+          {
+            rho_h = 0.5 * (rho(i, j, k + 1) + rho(i, j, k));
+            qr_h = 0.5 * (qr(i, j, k + 1) + qr(i, j, k));
+            this->mem->GC[2](i, j, k + h) -= 36.34 * rho_h * this->dt / this->dk * 
+              std::pow(1e-3 * rho_h * qr_h, 0.1364) * std::pow(rho_h / rho_g, -0.5);
+          }
+          this->mem->GC[2](i, j, this->k.last() + h) += 36.34 * rho_h * this->dt / this->dk *
+            std::pow(1e-3 * rho_h * qr_h, 0.1364) * std::pow(rho_h / rho_g, -0.5);
+        }
+      }
+    }
+  }
+
+  real_t pk2p(real_t pk)
+  {
+    const real_t p0 = 1e5;
+    return std::pow(pk, cp / Rd) * p0;
+  }
 
   template <int nd = ct_params_t::n_dims> 
   void calc_dtht_e(typename std::enable_if<nd == 3>::type* = 0)
@@ -104,7 +183,123 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     this->state(ix::u)(this->ijk) += u_e(this->ijk);
   }
 
-  void diffusion()
+  template<typename ijk_t>
+  auto vlap(
+    typename parent_t::arr_t &arr, 
+    real_t visc,
+    const ijk_t &ijk, 
+    const std::array<real_t, parent_t::n_dims>& dijk
+  ) return_macro(
+    this->xchng_pres(arr, ijk);
+    libmpdataxx::formulae::nabla::calc_grad<parent_t::n_dims>(this->lap_tmp, arr, ijk, dijk);
+    if (this->mem->G)
+    {
+      for (int d = 0; d < parent_t::n_dims; ++d)
+      {
+        this->lap_tmp[d](this->ijk) *= visc * (*this->mem->G)(this->ijk);
+      }
+    }
+    for (int d = 0; d < parent_t::n_dims; ++d)
+    {
+      this->xchng_pres(this->lap_tmp[d], ijk);
+    }
+    ,
+    libmpdataxx::formulae::nabla::div<parent_t::n_dims>(this->lap_tmp, ijk, dijk)
+    / libmpdataxx::formulae::G<ct_params_t::opts>(*this->mem->G, this->ijk)
+  )
+  
+  template<typename ijk_t, typename ijkm_t>
+  auto vlap_cmpct(
+    typename parent_t::arr_t &arr, 
+    real_t visc,
+    const ijk_t &ijk, 
+    const ijkm_t &ijkm, 
+    const std::array<real_t, parent_t::n_dims>& dijk
+  ) return_macro(
+    this->xchng_pres(arr, ijk);
+    libmpdataxx::formulae::nabla::calc_grad_cmpct<parent_t::n_dims>(this->grad_aux, arr, ijk, ijkm, dijk);
+    if (this->mem->G)
+    {
+      this->grad_aux[0](this->i + h, this->j, this->k) *= visc * 0.5 * (
+        (*this->mem->G)(this->i + 1, this->j, this->k) + (*this->mem->G)(this->i, this->j, this->k)
+      );
+      this->grad_aux[1](this->i, this->j + h, this->k) *= visc * 0.5 * (
+        (*this->mem->G)(this->i, this->j + 1, this->k) + (*this->mem->G)(this->i, this->j, this->k)
+      );
+      this->grad_aux[2](this->i, this->j, this->k + h) *= visc * 0.5 * (
+        (*this->mem->G)(this->i, this->j, this->k + 1) + (*this->mem->G)(this->i, this->j, this->k)
+      );
+    }
+    this->xchng_vctr_alng(this->grad_aux);
+    ,
+    (
+      (this->grad_aux[0](this->i + h, this->j, this->k) - this->grad_aux[0](this->i - h, this->j, this->k)) / this->di
+    + (this->grad_aux[1](this->i, this->j + h, this->k) - this->grad_aux[1](this->i, this->j - h, this->k)) / this->dj
+    + (this->grad_aux[2](this->i, this->j, this->k + h) - this->grad_aux[2](this->i, this->j, this->k - h)) / this->dk
+    ) / libmpdataxx::formulae::G<ct_params_t::opts>(*this->mem->G, this->ijk)
+  )
+  
+  void diffusion_simple()
+  {
+    auto &u = this->state(ix::u);
+    auto &v = this->state(ix::v);
+    auto &w = this->state(ix::w);
+
+
+    auto &tht = this->state(ix::tht);
+    auto &qv = this->state(ix::qv);
+    auto &qc = this->state(ix::qc);
+    auto &qr = this->state(ix::qr);
+    
+    tmp1(this->ijk) = u(this->ijk) - u_e(this->ijk);
+    this->rhs.at(ix::u)(this->ijk) += 2.0 * vlap(tmp1, 500., this->ijk, this->dijk);
+    this->rhs.at(ix::v)(this->ijk) += 2.0 * vlap(v, 500., this->ijk, this->dijk);
+    this->rhs.at(ix::w)(this->ijk) += 2.0 * vlap(w, 500., this->ijk, this->dijk);
+    
+    tmp1(this->ijk) = tht(this->ijk) - tht_e(this->ijk);
+    tmp2(this->ijk) = qv(this->ijk) - qv_e(this->ijk);
+    
+    this->rhs.at(ix::tht)(this->ijk) += 2.0 * vlap(tmp1, 1500., this->ijk, this->dijk);
+    this->rhs.at(ix::qv)(this->ijk)  += 2.0 * vlap(tmp2, 1500., this->ijk, this->dijk);
+    this->rhs.at(ix::qc)(this->ijk)  += 2.0 * vlap(qc , 1500., this->ijk, this->dijk);
+    this->rhs.at(ix::qr)(this->ijk)  += 2.0 * vlap(qr , 1500., this->ijk, this->dijk);
+                                                
+  }
+  
+  void diffusion_cmpct()
+  {
+
+    std::array<libmpdataxx::rng_t, ct_params_t::n_dims> ijkm;
+    for (int d = 0; d < ct_params_t::n_dims; ++d)
+    {
+      ijkm[d] = libmpdataxx::rng_t(this->ijk[d].first() - 1, this->ijk[d].last());
+    }
+
+    auto &u = this->state(ix::u);
+    auto &v = this->state(ix::v);
+    auto &w = this->state(ix::w);
+
+
+    auto &tht = this->state(ix::tht);
+    auto &qv = this->state(ix::qv);
+    auto &qc = this->state(ix::qc);
+    auto &qr = this->state(ix::qr);
+    
+    tmp1(this->ijk) = u(this->ijk) - u_e(this->ijk);
+    this->rhs.at(ix::u)(this->ijk) += 2.0 * vlap_cmpct(tmp1, 500., this->ijk, ijkm, this->dijk);
+    this->rhs.at(ix::v)(this->ijk) += 2.0 * vlap_cmpct(v, 500., this->ijk   , ijkm, this->dijk);
+    this->rhs.at(ix::w)(this->ijk) += 2.0 * vlap_cmpct(w, 500., this->ijk   , ijkm, this->dijk);
+    
+    tmp1(this->ijk) = tht(this->ijk) - tht_e(this->ijk);
+    tmp2(this->ijk) = qv(this->ijk) - qv_e(this->ijk);
+    
+    this->rhs.at(ix::tht)(this->ijk) += 2.0 * vlap_cmpct(tmp1, 1500., this->ijk, ijkm, this->dijk);
+    this->rhs.at(ix::qv)(this->ijk)  += 2.0 * vlap_cmpct(tmp2, 1500., this->ijk, ijkm, this->dijk);
+    this->rhs.at(ix::qc)(this->ijk)  += 2.0 * vlap_cmpct(qc , 1500., this->ijk , ijkm, this->dijk);
+    this->rhs.at(ix::qr)(this->ijk)  += 2.0 * vlap_cmpct(qr , 1500., this->ijk , ijkm, this->dijk);
+                                                
+  }
+  void diffusion_old()
   {
     //const libmpdataxx::rng_t ir(0, 128);
     //const libmpdataxx::rng_t jr(0, 128);
@@ -218,6 +413,136 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     //this->mem->barrier();
   }
 
+  void saturation_adjustment()
+  {
+    auto &tht = this->state(ix::tht);
+    auto &qv = this->state(ix::qv);
+    auto &qc = this->state(ix::qc);
+
+    real_t T0 = 273.16;
+    real_t L = 2.53e6;
+    real_t e0 = 611;
+    real_t Rv = 461.5;
+    real_t eps = Rd/Rv;
+    
+    for (int i = this->i.first(); i <= this->i.last(); ++i)
+    for (int j = this->j.first(); j <= this->j.last(); ++j)
+    for (int k = this->k.first(); k <= this->k.last(); ++k)
+    {
+
+      real_t pk = pk_e(i, j, k);
+      real_t p = pk2p(pk);
+      real_t th = tht(i, j, k);
+      real_t T = th * pk;
+      
+      real_t es = e0 * std::exp(L / Rv * ((T - T0) / (T0 * T)));
+      real_t qvs = eps * es / (p - es);
+     
+      // linerized solution
+      real_t cf1 = L * L / (cp * Rv) * std::pow(pk * th, -2.) / (1 - es / p);
+      real_t delta = (qv(i, j, k) - qvs) / (1. + qvs * cf1);
+      
+      // Newton-Raphson
+      th += L / (cp * pk) * delta;
+      T = th * pk;
+      es = e0 * std::exp(L / Rv * ((T - T0) / (T0 * T)));
+      qvs = eps * es / (p - es);
+      
+      cf1 = L * L / (cp * Rv) * std::pow(pk * th, -2) / (1 - es / p);
+      delta += (qv(i, j, k) - delta - qvs) / (1. + qvs * cf1);
+      
+      // limiting
+      delta = std::min(qv(i, j, k), std::max(-qc(i, j, k), delta));
+      
+      // modifying fields
+      qv(i, j, k) -= delta;
+      qc(i, j, k) += delta;
+      tht(i, j, k) += L / (cp * pk) * delta;
+      
+      // limiting
+      delta = std::min(qv(i, j, k), std::max(-qc(i, j, k), delta));
+      
+      // modifying forces
+      this->rhs.at(ix::qv)(i, j, k)  = - 2 * delta / this->dt;
+      this->rhs.at(ix::qc)(i, j, k)  =   2 * delta / this->dt;
+      this->rhs.at(ix::tht)(i, j, k) =   2 * L / (cp * pk) * delta / this->dt;
+    }
+  }
+  
+  void update_moist_forces()
+  {
+    real_t T0 = 273.16;
+    real_t L = 2.53e6;
+    real_t e0 = 611;
+    real_t Rv = 461.5;
+    real_t eps = Rd/Rv;
+
+    auto &tht = this->state(ix::tht);
+    auto &qv = this->state(ix::qv);
+    auto &qc = this->state(ix::qc);
+    auto &qr = this->state(ix::qr);
+    auto &rho = *this->mem->G;
+    
+    for (int i = this->i.first(); i <= this->i.last(); ++i)
+    for (int j = this->j.first(); j <= this->j.last(); ++j)
+    for (int k = this->k.first(); k <= this->k.last(); ++k)
+    {
+      real_t k1 = 1e-3;
+      real_t k2 = 2.2;
+      real_t qct = 1e-3;
+      
+      qv(i, j, k) = std::max(0., qv(i, j, k));
+      qc(i, j, k) = std::max(0., qc(i, j, k));
+      qr(i, j, k) = std::max(0., qr(i, j, k));
+
+      real_t AP = std::max(0., k1 * (qc(i, j, k) - qct));
+      //real_t AP = 0.;
+      real_t CP = k2 * qc(i, j, k) * std::pow(qr(i, j, k), 0.875);
+      //real_t CP = 0.;
+      
+      real_t C = 1.6 + 124.9 * std::pow(1e-3 * rho(i, j, k) * qr(i, j, k), 0.2046);
+
+      real_t pk = pk_e(i, j, k);
+      real_t p = pk2p(pk);
+      real_t th = tht(i, j, k);
+      real_t T = th * pk;
+      
+      real_t es = e0 * std::exp(L / Rv * ((T - T0) / (T0 * T)));
+      real_t qvs = eps * es / (p - es);
+
+      real_t EP = 1./ rho(i, j, k) * (qv(i, j, k) / qvs - 1) * C *
+                  std::pow(1e-3 * rho(i, j, k) * qr(i, j, k), 0.525)
+                  / 
+                  (5.4e2 + 2.55e5 / (rho(i, j, k) * qvs));
+
+      //real_t EP = 0.;
+      // limiting
+      real_t dcol = 2 * (AP + CP);
+      //dcol = std::min(dcol, 2. / this->dt * qc(i, j, k) + this->rhs.at(ix::qc)(i, j, k));
+      real_t devp = 2 * EP;
+      //devp = std::max(devp, -2. / this->dt * qr(i, j, k) - dcol);
+
+      // modifying forces
+      this->rhs.at(ix::qv)(i, j, k)  += -devp;
+      this->rhs.at(ix::qc)(i, j, k)  += -dcol;
+      this->rhs.at(ix::qr)(i, j, k)  += devp + dcol;
+      this->rhs.at(ix::tht)(i, j, k) += L / (cp * pk) * devp;
+
+      //precip
+      //real_t rho_g = rho(i, j, 0);
+      //real_t rho_k = rho(i, j, k);
+      //real_t rho_kp1 = rho(i, j, k + 1);
+      //real_t qr_k = qr(i, j, k);
+      //real_t qr_kp1 = qr(i, j, k + 1);
+
+      //real_t vr_k = 36.34 * std::pow(1e-3 * rho_k * qr_k, 0.1364) * std::pow(rho_k / rho_g, -0.5);
+      //real_t vr_kp1 = 36.34 * std::pow(1e-3 * rho_kp1 * qr_kp1, 0.1364) * std::pow(rho_kp1 / rho_g, -0.5);
+
+      //real_t sed = (rho_kp1 * vr_kp1 * qr_kp1 - rho_k * vr_k * qr_k) / (rho_k * this->dk);
+      //sed = (k == this->k.last()) ? - qr_k * vr_k / (0.5 * this->dk) : sed;
+      //this->rhs.at(ix::qr)(i, j, k)  += 2 * sed;
+    }
+  }
 
   template <typename arr_1d_t>
   void kessler(arr_1d_t qv, arr_1d_t qc, arr_1d_t qr, arr_1d_t theta, arr_1d_t rho, arr_1d_t pk, int nz)
@@ -329,30 +654,36 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       tmp2(this->ijk) = this->state(ix::tht)(this->ijk) + tht_e(this->ijk);
     } 
     
-    for (int i = this->i.first(); i <= this->i.last(); ++i)
+    //for (int i = this->i.first(); i <= this->i.last(); ++i)
+    //{
+    //  for (int j = this->j.first(); j <= this->j.last(); ++j)
+    //  {
+    //    auto 
+    //    rho_c    = (*this->mem->G)(i, j, this->k).reindex(0),
+    //    qv_c     = this->state(ix::qv)(i, j, this->k).reindex(0),
+    //    qc_c     = this->state(ix::qc)(i, j, this->k).reindex(0),
+    //    qr_c     = this->state(ix::qr)(i, j, this->k).reindex(0),
+    //    pk_c     = pk_e(i, j, this->k).reindex(0);
+    //   
+    //    if (ct_params_t::impl_tht)
+    //    {
+    //      auto
+    //      tht_c    = tmp2(i, j, this->k).reindex(0);
+    //      kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
+    //    }
+    //    else
+    //    {
+    //      auto
+    //      tht_c    = this->state(ix::tht)(i, j, this->k).reindex(0);
+    //      kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
+    //    }
+    //  }
+    //}
+
+    if (at > 0)
     {
-      for (int j = this->j.first(); j <= this->j.last(); ++j)
-      {
-        auto 
-        rho_c    = (*this->mem->G)(i, j, this->k).reindex(0),
-  	qv_c     = this->state(ix::qv)(i, j, this->k).reindex(0),
-  	qc_c     = this->state(ix::qc)(i, j, this->k).reindex(0),
-  	qr_c     = this->state(ix::qr)(i, j, this->k).reindex(0),
-  	pk_c     = pk_e(i, j, this->k).reindex(0);
-       
-        if (ct_params_t::impl_tht)
-        {
-          auto
-          tht_c    = tmp2(i, j, this->k).reindex(0);
-          kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
-        }
-        else
-        {
-          auto
-          tht_c    = this->state(ix::tht)(i, j, this->k).reindex(0);
-          kessler(qv_c, qc_c, qr_c, tht_c, rho_c, pk_c, this->mem->grid_size[2].last() + 1);
-        }
-      }
+      saturation_adjustment();
+      update_moist_forces();
     }
     
     if (ct_params_t::impl_tht)
@@ -370,7 +701,26 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       {
         case (0):
         {
-          rhs.at(ix::tht)(ijk) += -tht_abs(ijk) * (this->state(ix::tht)(ijk) - tht_e(ijk));
+          //rhs.at(ix::tht)(ijk) += -tht_abs(ijk) * (this->state(ix::tht)(ijk) - tht_e(ijk));
+
+          //if (!buoy_filter)
+          //{
+          //  rhs.at(ix_w)(ijk) += buoy_at_0(ijk);
+          //}
+          //else
+          //{
+          //  tmp1(ijk) = buoy_at_0(ijk);
+          //  filter();
+          //  rhs.at(ix_w)(ijk) += (tmp2)(ijk);
+          //}
+          break;
+        }
+        case (1):
+        {
+          this->state(ix::tht)(ijk) = (this->state(ix::tht)(ijk) +  0.5 * this->dt * tht_abs(ijk) * this->tht_e(ijk)) /
+                                      (1 + 0.5 * this->dt * tht_abs(ijk));
+
+          rhs.at(ix::tht)(ijk) += -tht_abs(ijk) * (this->state(ix::tht)(ijk) - this->tht_e(ijk));
 
           if (!buoy_filter)
           {
@@ -379,25 +729,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
           else
           {
             tmp1(ijk) = buoy_at_0(ijk);
-            filter();
-            rhs.at(ix_w)(ijk) += (tmp2)(ijk);
-          }
-          break;
-        }
-        case (1):
-        {
-          rhs.at(ix::tht)(ijk) += -tht_abs(ijk) *
-                    ( (this->state(ix::tht)(ijk) + 0.5 * this->dt * tht_abs(ijk) * this->tht_e(ijk))
-                      / (1 + 0.5 * this->dt * tht_abs(ijk))
-                     - this->tht_e(ijk) );
-
-          if (!buoy_filter)
-          {
-            rhs.at(ix_w)(ijk) += buoy_at_1(ijk);
-          }
-          else
-          {
-            tmp1(ijk) = buoy_at_1(ijk);
             filter();
             rhs.at(ix_w)(ijk) += (tmp2)(ijk);
           }
@@ -439,6 +770,11 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     }
   }
 
+  void hook_mixed_rhs()
+  {
+    this->state(ix::w)(this->ijk) += 0.5 * this->dt * this->rhs.at(ix::w)(this->ijk);
+  }
+
   void vip_rhs_impl_fnlz()
   {
     parent_t::vip_rhs_impl_fnlz();
@@ -450,34 +786,58 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       this->rhs.at(ix::tht)(this->ijk) += -w(this->ijk) * this->dtht_e(this->ijk);
     }
   }
+  
+  void hook_ante_step()
+  {
+    //if (this->rank == 0) std::cout << "itime, time: " << this->timestep << ' ' << this->time / 60.  << std::endl;
+    //print_stats("before half");
+    parent_t::hook_ante_step();
+
+    this->state(ix::qv)(this->ijk) = max(0., this->state(ix::qv)(this->ijk));
+    this->state(ix::qc)(this->ijk) = max(0., this->state(ix::qc)(this->ijk));
+    this->state(ix::qr)(this->ijk) = max(0., this->state(ix::qr)(this->ijk));
+    this->mem->barrier();
+  
+    //print_stats("after half");
+  }
+
 
   void hook_post_step()
   {
+    //print_stats("after adv");
     parent_t::hook_post_step();
 
-    if ((this->timestep % 60) == 0)
-    {
-      auto cfl = this->courant_number(this->mem->GC);
-      this->mem->barrier();
-      const libmpdataxx::rng_t ir(0, 84*4);
-      const libmpdataxx::rng_t jr(0, 84*4);
-      const libmpdataxx::rng_t kr(0, 40);
-      if (this->rank == 0)
-      {
-        auto qv_max     = max(this->state(ix::qv)(ir, jr, kr));
-        auto qv_min     = min(this->state(ix::qv)(ir, jr, kr));
-        auto w_max     = max(this->state(ix::w)(ir, jr, kr));
-        auto w_min     = min(this->state(ix::w)(ir, jr, kr));
-        std::cout << "time: " << this->time  << std::endl;
-        std::cout << "cfl: " << cfl  << std::endl;
-        std::cout << "qv: " << qv_min << ' ' << qv_max << std::endl;
-        std::cout << "w: " << w_min << ' ' << w_max << std::endl;
-      }
-      this->mem->barrier();
-    }
+    //if ((this->timestep % 12) == 0)
+    //{
+    //  auto cfl = this->courant_number(this->mem->GC);
+    //  this->mem->barrier();
+    //  const libmpdataxx::rng_t ir(0, 84);
+    //  const libmpdataxx::rng_t jr(0, 84);
+    //  const libmpdataxx::rng_t kr(0, 40);
+    //  if (this->rank == 0)
+    //  {
+    //    auto tht_max     = max(this->state(ix::tht)(ir, jr, kr));
+    //    auto tht_min     = min(this->state(ix::tht)(ir, jr, kr));
+    //    auto qv_max     = max(this->state(ix::qv)(ir, jr, kr));
+    //    auto qv_min     = min(this->state(ix::qv)(ir, jr, kr));
+    //    auto qc_max     = max(this->state(ix::qc)(ir, jr, kr));
+    //    auto qc_min     = min(this->state(ix::qc)(ir, jr, kr));
+    //    auto qr_max     = max(this->state(ix::qr)(ir, jr, kr));
+    //    auto qr_min     = min(this->state(ix::qr)(ir, jr, kr));
+    //    auto w_max     = max(this->state(ix::w)(ir, jr, kr));
+    //    auto w_min     = min(this->state(ix::w)(ir, jr, kr));
+    //    std::cout << "time: " << this->time / 60.  << std::endl;
+    //    std::cout << "cfl: " << cfl  << std::endl;
+    //    std::cout << "tht: " << tht_min << ' ' << tht_max << std::endl;
+    //    std::cout << "qv: " << qv_min << ' ' << qv_max << std::endl;
+    //    std::cout << "qc: " << qc_min << ' ' << qc_max << std::endl;
+    //    std::cout << "qr: " << qr_min << ' ' << qr_max << std::endl;
+    //    std::cout << "w: " << w_min << ' ' << w_max << std::endl;
+    //  }
+    //  this->mem->barrier();
+    //}
 
-
-    diffusion();
+    diffusion_cmpct();
   }
 
   public:
@@ -485,6 +845,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   struct rt_params_t : parent_t::rt_params_t 
   { 
     real_t g = 9.81;
+    real_t cp, Rd;
     bool buoy_filter = false;
   };
 
@@ -495,6 +856,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   ) :
     parent_t(args, p),
     g(p.g),
+    cp(p.cp),
+    Rd(p.Rd),
     buoy_filter(p.buoy_filter),
     tht_b(args.mem->tmp[__FILE__][0][0]),
     tht_e(args.mem->tmp[__FILE__][1][0]),
@@ -504,7 +867,10 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     tmp2(args.mem->tmp[__FILE__][4][1]),
     u_e(args.mem->tmp[__FILE__][5][0]),
     dtht_e(args.mem->tmp[__FILE__][6][0]),
-    grad_aux(args.mem->tmp[__FILE__][7])
+    grad_aux(args.mem->tmp[__FILE__][7]),
+    ir(0, 84),
+    jr(0, 84),
+    kr(0, 40)
   {}
 
   static void alloc(typename parent_t::mem_t *mem, const int &n_iters)

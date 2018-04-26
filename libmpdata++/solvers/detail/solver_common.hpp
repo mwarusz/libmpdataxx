@@ -281,8 +281,8 @@ namespace libmpdataxx
 
             timestep++;
             time = ct_params_t::var_dt ? time + dt : timestep * dt;
-            prev_dt = dt;
             hook_post_step();
+            prev_dt = dt;
 
             if (time >= nt) additional_steps--;
 	  }   

@@ -30,7 +30,8 @@ namespace libmpdataxx
 	protected:
 
 	// member fields
-	const real_t prs_tol, err_tol;
+	const real_t prs_tol;
+        real_t err_tol;
         int iters = 0;
         bool converged = false;
 
@@ -100,6 +101,11 @@ namespace libmpdataxx
 
 	void pressure_solver_update(bool simple = false)
         {
+          if (ct_params_t::var_dt)
+          {
+            err_tol *= this->prev_dt / this->dt;
+          }
+
           for (int d = 0; d < parent_t::n_dims; ++d)
           {
             tmp_uvw[d](this->ijk) = this->vips()[d](this->ijk);

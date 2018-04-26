@@ -20,13 +20,15 @@ namespace libmpdataxx
     { 
       euler_a, // Euler's method, Eulerian spirit:        psi^n+1 = ADV(psi^n) + R^n
       euler_b, // Euler's method, semi-Lagrangian spirit: psi^n+1 = ADV(psi^n + R^n)
-      trapez   // paraphrase of trapezoidal rule:         psi^n+1 = ADV(psi^n + 1/2 * R^n) + 1/2 * R^n+1 
+      trapez,   // paraphrase of trapezoidal rule:         psi^n+1 = ADV(psi^n + 1/2 * R^n) + 1/2 * R^n+1 
+      mixed   // 
     };
 
     const std::map<rhs_scheme_t, std::string> scheme2string {
       {euler_a, "euler_a"},
       {euler_b, "euler_b"},
       {trapez , "trapez"},
+      {mixed , "mixed"},
     };
     
     struct mpdata_rhs_family_tag {};
@@ -72,6 +74,8 @@ namespace libmpdataxx
         for (int e = 0; e < parent_t::n_eqns; ++e) this->xchng(e);
       }
 
+      virtual void hook_mixed_rhs() {}
+
       virtual void apply_rhs(
         const typename parent_t::real_t &dt_arg
       ) final
@@ -83,6 +87,14 @@ namespace libmpdataxx
 
           // otherwise apply the rhs
           this->state(e)(this->ijk) += dt_arg * rhs.at(e)(this->ijk);
+          //if (e < 4)
+          //{
+          //  this->state(e)(this->ijk) += dt_arg * rhs.at(e)(this->ijk);
+          //}
+          //else
+          //{
+          //  this->state(e)(this->ijk) += max(-this->state(e)(this->ijk), dt_arg * rhs.at(e)(this->ijk));
+          //}
         }
       }
 
@@ -117,6 +129,7 @@ namespace libmpdataxx
           case rhs_scheme_t::euler_b: 
             break;
           case rhs_scheme_t::trapez:
+          case rhs_scheme_t::mixed:
             update_rhs(rhs, this->dt / 2, n);
             break;
           default: 
@@ -142,6 +155,7 @@ namespace libmpdataxx
             apply_rhs(this->dt); 
             break;
           case rhs_scheme_t::trapez: 
+          case rhs_scheme_t::mixed:
             apply_rhs(this->dt / 2); 
             break;
           default: 
@@ -163,6 +177,9 @@ namespace libmpdataxx
             update_rhs(rhs, this->dt / 2, n+1);
             apply_rhs(this->dt / 2);
             break;
+          case rhs_scheme_t::mixed:
+            update_rhs(rhs, this->dt / 2, n+1);
+            hook_mixed_rhs();
           default:
             assert(false);
         }

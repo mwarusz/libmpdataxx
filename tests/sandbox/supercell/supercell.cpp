@@ -21,16 +21,16 @@ void test(T eta, const int np, const std::string &name)
     using real_t = T;
     enum { impl_tht = false};
     enum { var_dt = true};
-    enum { sgs_scheme = solvers::dns};
+    enum { sgs_scheme = solvers::iles};
     enum { stress_diff = solvers::compact};
     enum { opts = opts::nug | opts::iga | opts::fct};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
     enum { n_eqns = 7 };
-    enum { rhs_scheme = solvers::trapez };
+    enum { rhs_scheme = solvers::mixed };
     enum { prs_scheme = solvers::cr };
     struct ix { enum {
-      u, v, w, qv, qc, qr, tht,
+      u, v, w, tht, qv, qc, qr,
       vip_i=u, vip_j=v, vip_k=w, vip_den=-1
     }; };
   }; 
@@ -65,6 +65,7 @@ void test(T eta, const int np, const std::string &name)
   }
 
   int nt = sim_time / p.dt;
+  //nt = 100;
 
   p.di = dx;
   p.dj = dy;
@@ -74,11 +75,11 @@ void test(T eta, const int np, const std::string &name)
   p.n_iters = 2;
   
   p.buoy_filter = true;
-  p.eta = eta;
+  //p.eta = eta;
   
   if (ct_params_t::var_dt)
   {
-    p.max_courant = 0.9;
+    p.max_courant = 0.97;
   }
 
   if (ct_params_t::var_dt)
@@ -100,6 +101,13 @@ void test(T eta, const int np, const std::string &name)
   };
   p.outdir = name + "_" + std::to_string(np);
 
+  const T cp = 1004.5;
+  T Rd = 287.;
+  T R_d_over_c_pd_v = Rd / cp;
+
+  p.cp = cp;
+  p.Rd = Rd;
+
   libmpdataxx::concurr::threads<
     slv_out_t, 
     bcond::cyclic, bcond::cyclic,
@@ -116,7 +124,6 @@ void test(T eta, const int np, const std::string &name)
 
     blitz::Array<T, 1> wk_tht(nz), wk_RH(nz), wk_p(nz), wk_T(nz);
    
-    const T cp = 1004.5;
 
     const T z_tr = 12e3;
     const T tht_0 = 300;
@@ -129,7 +136,7 @@ void test(T eta, const int np, const std::string &name)
       if (z < z_tr)
       {
         wk_tht(k) = tht_0 + (tht_tr - tht_0) * std::pow(z / z_tr, 5./4);
-        wk_RH(k) = 1 - 0.75 * std::pow(z / z_tr, 5./4); 
+        wk_RH(k) = 1. - 0.75 * std::pow(z / z_tr, 5./4); 
       }
       else
       {
@@ -138,7 +145,6 @@ void test(T eta, const int np, const std::string &name)
       }
     }
    
-    T R_d_over_c_pd_v = 287. / cp;
     wk_p(0) = 1e5;
     for (int k = k_r.first() + 1; k <= k_r.last(); ++k)
     {
@@ -160,18 +166,33 @@ void test(T eta, const int np, const std::string &name)
     const auto& pk_e = slv.sclr_array("pk_e");
     const auto& qv_e = slv.sclr_array("qv_e");
 
+    T T0 = 273.16;
+    T L = 2.53e6;
+    T e0 = 611;
+    T Rv = 461.5;
+    T eps = Rd/Rv;
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
       tht_e(i_r, j_r, k) = wk_tht(k);
       pk_e(i_r, j_r, k) = std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
 
-      const real_t f2x = 17.27;
-      const T xk = 0.2875;
-      const real_t psl = 1000.0;
-      const T pc = 3.8 / (std::pow(pk_e(0, 0, k), 1. / xk) * psl);
-      const real_t qvs = pc * std::exp(f2x * (pk_e(0, 0, k) * tht_e(0, 0, k) - 273.)
-                                            / (pk_e(0, 0, k) * tht_e(0, 0, k)- 36.));
+// this was inconsistent !
+//      const real_t f2x = 17.27;
+//      const T xk = 0.2875;
+//      const real_t psl = 1000.0;
+//      const T pc = 3.8 / (std::pow(pk_e(0, 0, k), 1. / xk) * psl);
+//      const real_t qvs = pc * std::exp(f2x * (pk_e(0, 0, k) * tht_e(0, 0, k) - 273.)
+//                                            / (pk_e(0, 0, k) * tht_e(0, 0, k)- 36.));
+//
 
+      T pk = pk_e(0, 0, k);
+      T p = wk_p(k);
+      T th = tht_e(0, 0, k);
+      T Temp = th * pk;
+
+
+      T es = e0 * std::exp(L / Rv * ((Temp - T0) / (T0 * Temp)));
+      T qvs = eps * es / (p - es);
       qv_e(i_r, j_r, k) = std::min(0.014, wk_RH(k) * qvs);
     }
     
@@ -230,6 +251,7 @@ void test(T eta, const int np, const std::string &name)
       {
         u_e = U_s - U_c;
       }
+      //u_e = 0.;
       slv.advectee(ix::u)(i_r, j_r, k) = u_e;
       slv.sclr_array("u_e")(i_r, j_r, k) = u_e;
     }
@@ -260,6 +282,7 @@ void test(T eta, const int np, const std::string &name)
       slv.vab_coefficient() = where(k * dz >= z_abs,
                                      1. / 100 * (k * dz - z_abs) / (length_z - z_abs),
                                      0);
+      //slv.vab_coefficient() = 0.;
     }
     
     slv.vab_relaxed_state(0)(i_r, j_r, k_r) = slv.advectee(ix::u)(i_r, j_r, k_r);
@@ -276,17 +299,22 @@ void test(T eta, const int np, const std::string &name)
     //    << wk_RH(k) << ' '
     //    << qv_e(0, 0, k) << ' '
     //    << slv.advectee(ix::u)(0, 0, k) << ' '
-    //    << rho_b(0, 0, k) << ' '
     //    << tht_b(0, 0, k) << ' '
     //    << rho_b(0, 0, k)
     //    << std::endl;
     //}
+    
+    std::cout.precision(18);
+    for (int k = k_r.first(); k <= k_r.last(); ++k)
+    {
+      std::cout
+        << qv_e(0, 0, k) << std::endl;
+    }
   }
   
 
   std::cout << "Calculating: " << p.outdir << std::endl; 
 
-  std::cout.precision(18);
   std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 
   std::cout << "MIN V   " << min(slv.advectee(ix::v)) << std::endl; 
   std::cout << "MIN W   " << min(slv.advectee(ix::w)) << std::endl; 
@@ -331,13 +359,16 @@ void test(T eta, const int np, const std::string &name)
 
 int main() 
 {
-  std::vector<int> nps = {168 * 2};
-  //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
+  //std::vector<int> nps = {168 / 2};
+  std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
   for (const auto np : nps)
   {
     //test(500, np, "out_mdiff_cdt");
     //test(0, np, "out_iles_cdt");
     //test(500, np, "out_pdiff_cdt5");
-    test(500, np, "out_pdiff_vdt9");
+    //test(500, np, "out_pdiff_vdt9");
+    //test(0, np, "out_iles_cdt10_wojtek");
+    test(500, np, "out_pdiff_vdt9_cmpct");
+    //test(0, np, "out_iles_vdt9_wojtek");
   }
 }
