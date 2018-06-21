@@ -172,7 +172,7 @@ namespace libmpdataxx
 	virtual void fill_halos_vctr_nrml_cyclic(blitz::Array<real_t, 3> &, const rng_t &, const rng_t &) 
 	{};
 	
-        virtual void fill_halos_flux(arrvec_t<blitz::Array<real_t, 3>> &, const rng_t &, const rng_t &) 
+        virtual void fill_halos_flux(arrvec_t<blitz::Array<real_t, 3>> &, const rng_t &, const rng_t &, int) 
 	{};
 
 	protected:

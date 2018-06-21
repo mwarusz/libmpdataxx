@@ -35,7 +35,7 @@ namespace libmpdataxx
 	protected:
 
 	// member fields
-	const rng_t im, jm, km;
+	const rng_t im, jm, km, kb, kbm;
   
 	void hook_ante_loop(const typename parent_t::advance_arg_t nt)
 	{   
@@ -81,6 +81,9 @@ namespace libmpdataxx
 	    {
 	      this->cycle(e);
               this->xchng(e);
+
+              rng_t kt = (e == 6) ? kb : this->k;
+              rng_t ktm = (e == 6) ? kbm : this->km;
 
 	      // calculating the antidiffusive C 
               formulae::mpdata::antidiff<ct_params_t::opts, 0, static_cast<sptl_intrp_t>(ct_params_t::sptl_intrp)>(
@@ -163,8 +166,15 @@ namespace libmpdataxx
             }
             
             auto &flx = (*(this->flux_ptr));
-            if (e != 6) this->xchng_flux(flx);
-            //this->xchng_flux(flx);
+            if (e != 6) 
+            {
+              this->xchng_flux(flx);
+            }
+            else
+            {
+              //this->xchng_flux(flx, -1);
+              this->xchng_flux(flx);
+            }
 
             // sanity check for input
             assert(std::isfinite(sum(psi[n](ijk))));
@@ -203,7 +213,9 @@ namespace libmpdataxx
 	  parent_t(args, p),
 	  im(args.i.first() - 1, args.i.last()),
 	  jm(args.j.first() - 1, args.j.last()),
-	  km(args.k.first() - 1, args.k.last())
+	  km(args.k.first() - 1, args.k.last()),
+	  kb(args.k.first() + 1, args.k.last() - 1),
+	  kbm(args.k.first(), args.k.last() - 1)
 	{ }
       };
     } // namespace detail

@@ -71,11 +71,11 @@ namespace libmpdataxx
         fill_halos_sclr(a, j, k);
       }
       
-      void fill_halos_flux(arrvec_t<arr_t> &av, const rng_t &j, const rng_t &k)
+      void fill_halos_flux(arrvec_t<arr_t> &av, const rng_t &j, const rng_t &k, int fact)
       {
 	using namespace idxperm;
         // zero flux condition
-	av[d](pi<d>(this->left_halo_vctr.last(), j, k)) = -av[d](pi<d>(this->left_edge_sclr + h, j, k));
+	av[d](pi<d>(this->left_halo_vctr.last(), j, k)) = -fact * av[d](pi<d>(this->left_edge_sclr + h, j, k));
       }
     };
 
@@ -140,11 +140,11 @@ namespace libmpdataxx
         fill_halos_sclr(a, j, k);
       }
       
-      void fill_halos_flux(arrvec_t<arr_t> &av, const rng_t &j, const rng_t &k)
+      void fill_halos_flux(arrvec_t<arr_t> &av, const rng_t &j, const rng_t &k, int fact)
       {
 	using namespace idxperm;
         // zero flux condition
-	av[d](pi<d>(this->rght_halo_vctr.first(), j, k)) = -av[d](pi<d>(this->rght_edge_sclr - h, j, k));
+	av[d](pi<d>(this->rght_halo_vctr.first(), j, k)) = -fact * av[d](pi<d>(this->rght_edge_sclr - h, j, k));
       }
     };
   } // namespace bcond

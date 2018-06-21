@@ -180,6 +180,7 @@ namespace libmpdataxx
           case rhs_scheme_t::mixed:
             update_rhs(rhs, this->dt / 2, n+1);
             hook_mixed_rhs();
+            break;
           default:
             assert(false);
         }

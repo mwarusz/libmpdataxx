@@ -125,6 +125,9 @@ namespace libmpdataxx
 	    iters++;
           }
 
+          if (this->rank == 0) std::cout << "cr iters: " << iters << std::endl;
+          //if (this->rank == 0) std::cout << this->Phi(41, 42, 0) << ' ' << this->Phi(43, 42, 0) << std::endl;
+
 	  this->xchng_pres(this->Phi, this->ijk);
 
           formulae::nabla::calc_grad<parent_t::n_dims>(tmp_uvw, Phi, this->ijk, this->dijk);
@@ -170,6 +173,8 @@ namespace libmpdataxx
 
         void vip_rhs_impl_fnlz()
         {
+
+          //if (this->rank == 0) std::cout << "before fnlz: " << this->state(ix::u)(41, 42, 0) << ' ' << this->state(ix::u)(42, 42, 0)  << std::endl;
           for (int d = 0; d < parent_t::n_dims; ++d)
           {
             this->vip_rhs[d](this->ijk) = -this->vips()[d](this->ijk);
@@ -186,6 +191,8 @@ namespace libmpdataxx
             this->vip_rhs[d](this->ijk) += this->vips()[d](this->ijk);
             this->vip_rhs[d](this->ijk) /= (0.5 * this->dt);
           }
+          
+          //if (this->rank == 0) std::cout << "after fnlz: " << this->state(ix::u)(41, 42, 0) << ' ' << this->state(ix::u)(42, 42, 0)  << std::endl;
         }
 
 	public:

@@ -13,16 +13,18 @@ using T = double;
 
 const T pi = std::acos(-1.0);
 
-void test(T eta, const int np, const std::string &name)
+template <bool simple>
+void test(T eta, const int np, std::string name)
 {
   // compile-time parameters
   struct ct_params_t : ct_params_default_t
   {
     using real_t = T;
     enum { impl_tht = false};
-    enum { var_dt = true};
+    enum { var_dt = false};
     enum { sgs_scheme = solvers::iles};
-    enum { stress_diff = solvers::compact};
+    enum { stress_diff = simple ? solvers::normal : solvers::compact};
+    //enum { opts = opts::nug | opts::abs | opts::fct};
     enum { opts = opts::nug | opts::iga | opts::fct};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
@@ -41,14 +43,14 @@ void test(T eta, const int np, const std::string &name)
 
   const T sim_time = 7200;
 
-  const int nx = np + 1, ny = np + 1, nz = 41;
+  const int nx = np, ny = np, nz = 41;
 
-  using slv_out_t = output::hdf5_xdmf<supercell<ct_params_t>>;
+  using slv_out_t = typename output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
-  slv_out_t::rt_params_t p;
+  typename slv_out_t::rt_params_t p;
 
-  T length_x = 168e3;
-  T length_y = 168e3;
+  T length_x = 167e3;
+  T length_y = 167e3;
   T length_z = 20e3;
 
   T dx = length_x / (nx - 1);
@@ -61,7 +63,7 @@ void test(T eta, const int np, const std::string &name)
   }
   else
   {
-    p.dt = 10.0;
+    p.dt = 2.5 * scale;
   }
 
   int nt = sim_time / p.dt;
@@ -70,7 +72,7 @@ void test(T eta, const int np, const std::string &name)
   p.di = dx;
   p.dj = dy;
   p.dk = dz; 
-  p.prs_tol = 1e-6;
+  p.prs_tol = 1e-5;
   p.grid_size = {nx, ny, nz};
   p.n_iters = 2;
   
@@ -100,13 +102,31 @@ void test(T eta, const int np, const std::string &name)
     {ix::w, {"w", "?"  }}
   };
   p.outdir = name + "_" + std::to_string(np);
+  p.name = "stats_" + name.erase(0, 4) + "_" + std::to_string(np);
 
   const T cp = 1004.5;
-  T Rd = 287.;
-  T R_d_over_c_pd_v = Rd / cp;
-
+  const T Rd = 287.;
+  const T R_d_over_c_pd_v = Rd / cp;
+  const T T0 = 273.16;
+  const T L = 2.53e6;
+  const T e0 = 611;
+  const T Rv = 461.;
+  const T epsa = Rd/Rv;
+  const T epsb = Rv/Rd-1;
+  
+  p.g = 9.81;
   p.cp = cp;
   p.Rd = Rd;
+  p.Rv = Rv;
+  p.L = L;
+  p.e0 = e0;
+  p.epsa = epsa;
+  p.buoy_eps = epsb;
+  p.T0 = T0;
+
+  std::cout << "epsb: " << epsb << std::endl;
+
+
 
   libmpdataxx::concurr::threads<
     slv_out_t, 
@@ -122,13 +142,18 @@ void test(T eta, const int np, const std::string &name)
   // init
   {
 
-    blitz::Array<T, 1> wk_tht(nz), wk_RH(nz), wk_p(nz), wk_T(nz);
+    blitz::Array<T, 1> wk_tht(nz), wk_RH(nz), wk_p(nz), wk_T(nz),  wk_thd(nz), wk_pi(nz);
    
 
     const T z_tr = 12e3;
     const T tht_0 = 300;
     const T tht_tr = 343;
     const T T_tr = 213;
+    
+    
+    const auto& tht_e = slv.sclr_array("tht_e");
+    const auto& pk_e = slv.sclr_array("pk_e");
+    const auto& qv_e = slv.sclr_array("qv_e");
 
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
@@ -143,70 +168,103 @@ void test(T eta, const int np, const std::string &name)
         wk_tht(k) = tht_tr * std::exp(p.g / (cp * T_tr) * (z - z_tr));
         wk_RH(k) = 0.25;
       }
-    }
-   
-    wk_p(0) = 1e5;
-    for (int k = k_r.first() + 1; k <= k_r.last(); ++k)
-    {
-      auto del_th = wk_tht(k) - wk_tht(k - 1);
-      // copied from eulag, why ?
-      auto inv_th = del_th > 1e-4 ? std::log(wk_tht(k) / wk_tht(k - 1)) / del_th : 1. / wk_tht(k);
-      wk_p(k) = std::pow(std::pow(wk_p(k - 1), R_d_over_c_pd_v) - p.g * std::pow(1e5, R_d_over_c_pd_v) * inv_th * dz / cp
-                   ,
-                   1./ R_d_over_c_pd_v);
+      
+      wk_thd(k) = wk_tht(k);
     }
     
-    for (int k = k_r.first(); k <= k_r.last(); ++k)
+    wk_pi(0) = 1;
+    for (int iter = 0; iter < 10; ++iter)
     {
-      wk_T(k) = wk_tht(k) * std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
+      for (int k = k_r.first() + 1; k <= k_r.last(); ++k)
+      {
+        wk_pi(k) = wk_pi(k - 1) - 2. * p.g / cp * dz / (wk_thd(k) + wk_thd(k - 1));
+      }
+      
+      for (int k = k_r.first(); k <= k_r.last(); ++k)
+      {
+        wk_p(k) = 1e5 * std::pow(wk_pi(k), 1./ R_d_over_c_pd_v);
+        wk_T(k) = wk_tht(k) * wk_pi(k);
 
+        T p = wk_p(k);
+        T Temp = wk_T(k);
+        T es = e0 * std::exp(L / Rv * ((Temp - T0) / (T0 * Temp)));
+        T qvs = epsa * es / (p - es);
+        
+        qv_e(i_r, j_r, k) = std::min(0.014, wk_RH(k) * qvs);
+        
+        wk_thd(k) = wk_tht(k) * (1 + epsb * qv_e(0, 0, k));
+        
+        pk_e(i_r, j_r, k) = wk_pi(k);
+        tht_e(i_r, j_r, k) = wk_tht(k);
+      }
     }
+   
+    //wk_p(0) = 1e5;
+    //for (int k = k_r.first() + 1; k <= k_r.last(); ++k)
+    //{
+    //  auto del_th = wk_tht(k) - wk_tht(k - 1);
+    //  // copied from eulag, why ?
+    //  auto inv_th = del_th > 1e-4 ? std::log(wk_tht(k) / wk_tht(k - 1)) / del_th : 1. / wk_tht(k);
+    //  wk_p(k) = std::pow(std::pow(wk_p(k - 1), R_d_over_c_pd_v) - p.g * std::pow(1e5, R_d_over_c_pd_v) * inv_th * dz / cp
+    //               ,
+    //               1./ R_d_over_c_pd_v);
+    //}
+    
+    //for (int k = k_r.first(); k <= k_r.last(); ++k)
+    //{
+    //  wk_T(k) = wk_tht(k) * std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
+
+    //}
   
-    const auto& tht_e = slv.sclr_array("tht_e");
-    const auto& pk_e = slv.sclr_array("pk_e");
-    const auto& qv_e = slv.sclr_array("qv_e");
 
-    T T0 = 273.16;
-    T L = 2.53e6;
-    T e0 = 611;
-    T Rv = 461.5;
-    T eps = Rd/Rv;
-    for (int k = k_r.first(); k <= k_r.last(); ++k)
-    {
-      tht_e(i_r, j_r, k) = wk_tht(k);
-      pk_e(i_r, j_r, k) = std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
+    //for (int k = k_r.first(); k <= k_r.last(); ++k)
+    //{
+    //  tht_e(i_r, j_r, k) = wk_tht(k);
+    //  pk_e(i_r, j_r, k) = std::pow(wk_p(k) / 1e5, R_d_over_c_pd_v);
 
-// this was inconsistent !
-//      const real_t f2x = 17.27;
-//      const T xk = 0.2875;
-//      const real_t psl = 1000.0;
-//      const T pc = 3.8 / (std::pow(pk_e(0, 0, k), 1. / xk) * psl);
-//      const real_t qvs = pc * std::exp(f2x * (pk_e(0, 0, k) * tht_e(0, 0, k) - 273.)
-//                                            / (pk_e(0, 0, k) * tht_e(0, 0, k)- 36.));
-//
+    //  // this was inconsistent !
+    //  //      const real_t f2x = 17.27;
+    //  //      const T xk = 0.2875;
+    //  //      const real_t psl = 1000.0;
+    //  //      const T pc = 3.8 / (std::pow(pk_e(0, 0, k), 1. / xk) * psl);
+    //  //      const real_t qvs = pc * std::exp(f2x * (pk_e(0, 0, k) * tht_e(0, 0, k) - 273.)
+    //  //                                            / (pk_e(0, 0, k) * tht_e(0, 0, k)- 36.));
+    //  //
 
-      T pk = pk_e(0, 0, k);
-      T p = wk_p(k);
-      T th = tht_e(0, 0, k);
-      T Temp = th * pk;
+    //  T pk = pk_e(0, 0, k);
+    //  T p = wk_p(k);
+    //  T th = tht_e(0, 0, k);
+    //  T Temp = th * pk;
 
 
-      T es = e0 * std::exp(L / Rv * ((Temp - T0) / (T0 * Temp)));
-      T qvs = eps * es / (p - es);
-      qv_e(i_r, j_r, k) = std::min(0.014, wk_RH(k) * qvs);
-    }
+    //  T es = e0 * std::exp(L / Rv * ((Temp - T0) / (T0 * Temp)));
+    //  T qvs = eps * es / (p - es);
+    //  qv_e(i_r, j_r, k) = std::min(0.014, wk_RH(k) * qvs);
+    //}
     
     const auto& tht_b = slv.sclr_array("tht_b");
     const auto& rho_b = slv.g_factor();
 
-    const T stab = 1.020e-5;
+    
+    T stab = 0.0;
+    for (int k = k_r.first() + 1; k <= k_r.last() - 1; ++k)
+    {
+      stab += (wk_tht(k + 1) - wk_tht(k - 1)) / (2 * dz * wk_tht(k));
+    }
+    stab /= (nz - 2);
+
+    stab = 1.235e-5;
+    std::cout << "stability: " << stab << std::endl;
+
     const T cs_v = p.g / (cp * 300. * stab);
+
+    const T rho0 = 1e5 / (Rd * 300.);
 
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
       T z = k * dz;
       tht_b(i_r, j_r, k) = 300 * std::exp(stab * z);
-      rho_b(i_r, j_r, k) = 1.11 * std::exp(-stab * z) * std::pow(1 - cs_v * (1 - std::exp(-stab * z)), 1. / R_d_over_c_pd_v - 1);
+      rho_b(i_r, j_r, k) = rho0 * std::exp(-stab * z) * std::pow(1 - cs_v * (1 - std::exp(-stab * z)), 1. / R_d_over_c_pd_v - 1);
     }
     
     //for (int k = k_r.first(); k <= k_r.last(); ++k)
@@ -278,11 +336,11 @@ void test(T eta, const int np, const std::string &name)
         
       slv.advectee(ix::tht) += delta(i, j, k);
     
-      const T z_abs = 15000;
-      slv.vab_coefficient() = where(k * dz >= z_abs,
-                                     1. / 100 * (k * dz - z_abs) / (length_z - z_abs),
-                                     0);
-      //slv.vab_coefficient() = 0.;
+      //const T z_abs = 15000;
+      //slv.vab_coefficient() = where(k * dz >= z_abs,
+      //                               1. / 100 * (k * dz - z_abs) / (length_z - z_abs),
+      //                               0);
+      slv.vab_coefficient() = 0.;
     }
     
     slv.vab_relaxed_state(0)(i_r, j_r, k_r) = slv.advectee(ix::u)(i_r, j_r, k_r);
@@ -307,9 +365,19 @@ void test(T eta, const int np, const std::string &name)
     std::cout.precision(18);
     for (int k = k_r.first(); k <= k_r.last(); ++k)
     {
-      std::cout
-        << qv_e(0, 0, k) << std::endl;
+      std::cout << k * dz << ' '
+        << qv_e(0, 0, k) << ' '
+        << wk_T(k) << ' '
+        << slv.advectee(ix::u)(0, 0, k) << ' '
+        << wk_tht(k) << std::endl;
     }
+    
+    std::cout << "sum qv_e: " << sum(qv_e(0, 0, k_r)) << std::endl;
+    rng_t ki_r(1, nz - 2);
+    std::cout << "sum test: " <<   0.5 * qv_e(0, 0, 0) * rho_b(0, 0, 0)
+                                 + sum(qv_e(0, 0, ki_r) * rho_b(0, 0, ki_r))
+                                 + 0.5 * qv_e(0, 0, nz - 1) * rho_b(0, 0, nz - 1)
+                                       << std::endl;
   }
   
 
@@ -359,8 +427,8 @@ void test(T eta, const int np, const std::string &name)
 
 int main() 
 {
-  //std::vector<int> nps = {168 / 2};
-  std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
+  std::vector<int> nps = {168 / 2}; 
+  //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
   for (const auto np : nps)
   {
     //test(500, np, "out_mdiff_cdt");
@@ -368,7 +436,11 @@ int main()
     //test(500, np, "out_pdiff_cdt5");
     //test(500, np, "out_pdiff_vdt9");
     //test(0, np, "out_iles_cdt10_wojtek");
-    test(500, np, "out_pdiff_vdt9_cmpct");
-    //test(0, np, "out_iles_vdt9_wojtek");
+    //test<false>(500, np, "out_pdiff_vdt8_cmpct");
+    //test<true>(500, np, "out_pdiff_cdt5_simple");
+    //test<true>(500, np, "out_pdiff_vdt97_simple");
+    //test<true>(500, np, "out_pdiff_cdt10_simple_rfrc");
+    test<false>(500, np, "out_piotr_cdt5_noprec_upw");
+    //test<false>(500, np, "out_piotr_cdt5_fixes");
   }
 }

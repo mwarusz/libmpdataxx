@@ -85,7 +85,10 @@ namespace libmpdataxx
           }
 
 
-          const auto &flx = (*(this->flux_ptr));
+          auto &flx = (*(this->flux_ptr));
+          
+          //if (e != 6) this->xchng_flux(flx);
+          this->xchng_flux(flx);
 
           // calculating betas
           formulae::mpdata::beta_up<ct_params_t::opts>(this->beta_up, psi, this->psi_max, flx, G, i1, j1, k1);
@@ -106,7 +109,7 @@ namespace libmpdataxx
 	  // calculating the monotonic corrective velocity
 	  formulae::mpdata::GC_mono<ct_params_t::opts, 0>(this->GC_mono, psi, this->beta_up, this->beta_dn, GC_corr, G, im, this->j, this->k);
 	  formulae::mpdata::GC_mono<ct_params_t::opts, 1>(this->GC_mono, psi, this->beta_up, this->beta_dn, GC_corr, G, jm, this->k, this->i);
-	  formulae::mpdata::GC_mono<ct_params_t::opts, 2>(this->GC_mono, psi, this->beta_up, this->beta_dn, GC_corr, G, km, this->i, this->j);
+	  formulae::mpdata::GC_mono<ct_params_t::opts, 2>(this->GC_mono, psi, this->beta_up, this->beta_dn, GC_corr, G, this->km, this->i, this->j);
         }
 
       };
