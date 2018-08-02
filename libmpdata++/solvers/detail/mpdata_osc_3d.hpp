@@ -72,6 +72,13 @@ namespace libmpdataxx
 	// method invoked by the solver
 	void advop(int e)
 	{
+
+          if (this->rank == 0)
+          {
+            std::cout << "Test1 " << e << ' ' << std::max(0., std::min(3. - e, 1.0)) << std::endl;
+            std::cout << "Test2 " << this->mem->psi[e][this->n[e]](33, 33, 5) << std::endl;
+          }
+
 	  this->fct_init(e);
 
 	  for (int iter = 0; iter < this->n_iters; ++iter) 
@@ -92,7 +99,8 @@ namespace libmpdataxx
                 *this->mem->G,
                 this->im,
                 this->j,
-                this->k
+                this->k,
+                e
               );
 
               formulae::mpdata::antidiff<ct_params_t::opts, 1, static_cast<sptl_intrp_t>(ct_params_t::sptl_intrp)>(
@@ -105,7 +113,8 @@ namespace libmpdataxx
                 *this->mem->G,
                 this->jm,
                 this->k,
-                this->i
+                this->i,
+                e
               );
             
               formulae::mpdata::antidiff<ct_params_t::opts, 2, static_cast<sptl_intrp_t>(ct_params_t::sptl_intrp)>(
@@ -118,7 +127,8 @@ namespace libmpdataxx
                 *this->mem->G,
                 this->km,
                 this->i,
-                this->j
+                this->j,
+                e
               );
 	    
               if (opts::isset(ct_params_t::opts, opts::div_3rd_dt))

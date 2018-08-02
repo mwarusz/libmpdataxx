@@ -13,19 +13,20 @@
 using namespace libmpdataxx;
 using boost::math::constants::pi;
 
-void test(const std::string &dirname, double rey)
+template <int opt_arg, int iters_arg, int prs_ord_arg>
+void test(const std::string &dirname)
 {
-  const int nx = 65, ny = 65, nz = 65, nt = 2000;
+  const int nx = 65, ny = 65, nz = 65;
 
   struct ct_params_t : ct_params_default_t
   {
     using real_t = double;
+    enum { prs_order = prs_ord_arg };
+    enum { var_dt = false };
     enum { n_dims = 3 };
-    enum { opts = opts::fct | opts::iga};
+    enum { opts = opt_arg};
     enum { n_eqns = 3 };
     enum { rhs_scheme = solvers::trapez };
-    enum { sgs_scheme = solvers::dns };
-    enum { stress_diff = solvers::pade };
     enum { prs_scheme = solvers::cr };
     struct ix { enum {
       u, v, w,
@@ -37,28 +38,30 @@ void test(const std::string &dirname, double rey)
 
   using ix = typename ct_params_t::ix;
 
-  using solver_t = output::hdf5_xdmf<libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_t>>;
+  using solver_t = output::hdf5_xdmf<libmpdataxx::solvers::mpdata_rhs_vip_prs<ct_params_t>>;
 
-  solver_t::rt_params_t p;
+  typename solver_t::rt_params_t p;
 
-  p.n_iters = 2;
+  p.n_iters = iters_arg;
 
-  p.eta = 1.0 / rey;
+  double time = 10.0;
+  p.dt = 0.02;
+  p.max_courant = 1.0;
+  int nt = time / p.dt;
 
-  p.dt = 0.005;
-  p.di = 2 * pi<ct_params_t::real_t>() / (nx - 1);
-  p.dj = 2 * pi<ct_params_t::real_t>() / (ny - 1);
-  p.dk = 2 * pi<ct_params_t::real_t>() / (nz - 1);
+  p.di = 2 * pi<typename ct_params_t::real_t>() / (nx - 1);
+  p.dj = 2 * pi<typename ct_params_t::real_t>() / (ny - 1);
+  p.dk = 2 * pi<typename ct_params_t::real_t>() / (nz - 1);
 
-  p.outfreq = 50; 
-  p.outwindow = 3;
+  p.outfreq = nt; 
+  p.outwindow = 1;
   p.outvars = {
     {ix::u,   {.name = "u",   .unit = "m/s"}}, 
     {ix::v,   {.name = "v",   .unit = "m/s"}}, 
     {ix::w,   {.name = "w",   .unit = "m/s"}}, 
   };
   p.outdir = dirname;
-  p.prs_tol = 1e-7;
+  p.prs_tol = 1e-6;
   p.grid_size = {nx, ny, nz};
 
   libmpdataxx::concurr::threads<
@@ -83,6 +86,34 @@ void test(const std::string &dirname, double rey)
 
 int main()
 {
-  test("rey=800", 800);
-  test("rey=100", 100);
+
+  //{
+  //  const int prs_order = 2;
+  //  test<opts::iga | opts::fct, 2, prs_order>("out_iga_fct_prs2");
+  //  test<opts::iga | opts::tot | opts::fct, 2, prs_order>("out_iga_tot_fct_prs2");
+  //  test<opts::iga | opts::div_2nd | opts::div_3rd | opts::fct, 2, prs_order>("out_iga_div3_fct_prs2");
+
+  //  test<opts::iga, 2, prs_order>("out_iga_prs2");
+  //  test<opts::iga | opts::tot, 2, prs_order>("out_iga_tot_prs2");
+  //  test<opts::iga | opts::div_2nd | opts::div_3rd, 2, prs_order>("out_iga_div3_prs2");
+  //  
+  //  test<opts::abs, 2, prs_order>("out_abs_prs2");
+  //  test<opts::abs | opts::tot, 3, prs_order>("out_abs_tot_prs2");
+  //  test<opts::abs | opts::div_2nd | opts::div_3rd, 2, prs_order>("out_abs_div3_prs2");
+  //}
+  
+  {
+    const int prs_order = 4;
+    //test<opts::iga | opts::fct, 2, prs_order>("out_iga_fct_prs4");
+    //test<opts::iga | opts::tot | opts::fct, 2, prs_order>("out_iga_tot_fct_prs4");
+    //test<opts::iga | opts::div_2nd | opts::div_3rd | opts::fct, 2, prs_order>("out_iga_div3_fct_prs4");
+
+    test<opts::iga, 2, prs_order>("out_iga_prs4");
+    //test<opts::iga | opts::tot, 2, prs_order>("out_iga_tot_prs4");
+    //test<opts::iga | opts::div_2nd | opts::div_3rd, 2, prs_order>("out_iga_div3_prs4");
+    //
+    //test<opts::abs, 2, prs_order>("out_abs_prs4");
+    //test<opts::abs | opts::tot, 3, prs_order>("out_abs_tot_prs4");
+    //test<opts::abs | opts::div_2nd | opts::div_3rd, 2, prs_order>("out_abs_div3_prs4");
+  }
 }

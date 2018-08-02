@@ -158,7 +158,8 @@ namespace libmpdataxx
               record_time = this->time;
               for (int t = 0; t < outwindow; ++t)
               {
-                if ((this->timestep - t) % static_cast<int>(outfreq) == 0) record_all();
+                if ((this->timestep - t) % static_cast<int>(outfreq) == 0 || this->timestep >= 1825) record_all();
+                //if ((this->timestep - t) % static_cast<int>(outfreq) == 0 || this->time > 9.0) record_all();
               }
             }
           }

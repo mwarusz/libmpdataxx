@@ -120,7 +120,8 @@ namespace libmpdataxx
         const arr_3d_t &G, 
         const ix_t &i, 
         const ix_t &j,
-        const ix_t &k
+        const ix_t &k,
+        int e
       )
       {
         return return_helper<ix_t>(
@@ -128,7 +129,7 @@ namespace libmpdataxx
           (
               4 * GC[dim](pi<dim>(i+h, j, k)) * ndxx_psi<opts, dim>(psi, i, j, k)
             + 2 * ndx_psi<opts, dim>(psi, i, j, k) * ndx_GC0<dim>(GC[dim], i, j, k)
-            + div_3rd_spatial_helper<opts, dim, sptl_intrp>(psi, GC, i, j, k)
+            + std::max(0., std::min(3. - e, 1.0)) * div_3rd_spatial_helper<opts, dim, sptl_intrp>(psi, GC, i, j, k)
           )
         );
       }
@@ -144,6 +145,7 @@ namespace libmpdataxx
         const ix_t &i, 
         const ix_t &j,
         const ix_t &k,
+        int e,
         typename std::enable_if<!opts::isset(opts, opts::div_3rd) && !opts::isset(opts, opts::div_3rd_dt)>::type* = 0
       )
       {
@@ -161,6 +163,7 @@ namespace libmpdataxx
         const ix_t &i, 
         const ix_t &j,
         const ix_t &k,
+        int e,
         typename std::enable_if<opts::isset(opts, opts::div_3rd)>::type* = 0
       )
       {
@@ -168,14 +171,14 @@ namespace libmpdataxx
           // upwind differencing correction
           div_3rd_upwind<opts, dim>(psi_np1, GC, G, i, j, k)
           // spatial terms
-          + div_3rd_spatial<opts, dim, sptl_intrp>(psi_np1, GC, G, i, j, k)
+          + div_3rd_spatial<opts, dim, sptl_intrp>(psi_np1, GC, G, i, j, k, e)
           // mixed terms
           + 0.5 * abs(GC[dim](pi<dim>(i+h, j, k))) * ndx_fdiv<opts, dim>(psi_np1, GC, G, i, j, k)
           // temporal terms
           + 1.0 / 24 *
           (
               - 8 * GC[dim](pi<dim>(i+h, j, k)) *  nfdiv_fdiv<opts, dim>(psi_np1, GC, G, i, j, k)
-              + 1 * ndtt_GC0<opts, dim>(psi_np1, ndtt_GC[dim], i, j, k)
+              + 10 * ndtt_GC0<opts, dim>(psi_np1, ndtt_GC[dim], i, j, k)
               + 2 * GC[dim](pi<dim>(i+h, j, k)) *  nfdiv<opts, dim>(psi_np1, ndt_GC, G, i, j, k)
               - 2 * ndt_GC[dim](pi<dim>(i+h, j, k)) * nfdiv<opts, dim>(psi_np1, GC, G, i, j, k)
           )
@@ -193,6 +196,7 @@ namespace libmpdataxx
         const ix_t &i, 
         const ix_t &j,
         const ix_t &k,
+        int e,
         typename std::enable_if<opts::isset(opts, opts::div_3rd_dt)>::type* = 0
       )
       {
@@ -200,14 +204,14 @@ namespace libmpdataxx
           // upwind differencing correction
           div_3rd_upwind<opts, dim>(psi_np1, GC, G, i, j, k)
           // spatial terms
-          + div_3rd_spatial<opts, dim, sptl_intrp>(psi_np1, GC, G, i, j, k)
+          + div_3rd_spatial<opts, dim, sptl_intrp>(psi_np1, GC, G, i, j, k, e)
           // mixed terms
           - 0.5 * abs(GC[dim](pi<dim>(i+h, j, k))) * ndtx_psi<opts, dim>(psi_np1, psi_n, i, j, k)
           // temporal terms
           + 1.0 / 24 *
           (
               + 8 * GC[dim](pi<dim>(i+h, j, k)) *  nfdiv_dt<opts, dim>(psi_np1, psi_n, GC, G, i, j, k)
-              + 1 * ndtt_GC0<opts, dim>(psi_np1, ndtt_GC[dim], i, j, k)
+              + 10 * ndtt_GC0<opts, dim>(psi_np1, ndtt_GC[dim], i, j, k)
               + 2 * GC[dim](pi<dim>(i+h, j, k)) *  nfdiv<opts, dim>(psi_np1, ndt_GC, G, i, j, k)
               + 2 * ndt_GC[dim](pi<dim>(i+h, j, k)) * ndt_psi<opts, dim>(psi_np1, psi_n, i, j, k)
           )
@@ -227,6 +231,7 @@ namespace libmpdataxx
         const rng_t &ir,
         const rng_t &jr,
         const rng_t &kr,
+        int e,
         typename std::enable_if<!opts::isset(opts, opts::div_2nd) && !opts::isset(opts, opts::div_3rd)>::type* = 0
       )
       {
@@ -271,6 +276,7 @@ namespace libmpdataxx
         const rng_t &ir, 
         const rng_t &jr,
         const rng_t &kr,
+        int e,
         typename std::enable_if<opts::isset(opts, opts::div_2nd)>::type* = 0
       )
       {
@@ -285,7 +291,7 @@ namespace libmpdataxx
             {
               res(pi<dim>(i + h, j, k)) = 
               div_2nd<opts, dim>(psi_np1, GC, G, i, j, k) +
-              div_3rd<opts, dim, sptl_intrp>(psi_np1, psi_n, GC, ndt_GC, ndtt_GC, G, i, j, k);
+              div_3rd<opts, dim, sptl_intrp>(psi_np1, psi_n, GC, ndt_GC, ndtt_GC, G, i, j, k, e);
             }
           }
         }

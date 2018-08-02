@@ -121,18 +121,31 @@ namespace libmpdataxx
 	  using namespace arakawa_c;
 
           const auto beta = this->prev_dt[0] > 0 ? this->dt / (2 * this->prev_dt[0]) : 0;
+          
+          const auto c = parent_t::div3_mpdata ? 5. / 12 : 0;
+          const auto a = 3. / 2 + c;
+          const auto b = - 1. / 2 - 2 * c;
 
           if (!ct_params_t::var_dt && !parent_t::div3_mpdata)
           {
+	    //this->vip_state(0, d)(this->ijk) *= b;
 	    this->vip_state(0, d)(this->ijk) *= -beta;
           }
           else
           {
+	    //this->vip_state(0, d)(this->ijk) = b * this->vip_state(-1, d)(this->ijk);
 	    this->vip_state(0, d)(this->ijk) = -beta * this->vip_state(-1, d)(this->ijk);
           }
 
 	  if (ix::vip_den == -1) 
+          {
 	    this->vip_state(0, d)(this->ijk) += (1 + beta) * this->state(e)(this->ijk);
+	    //this->vip_state(0, d)(this->ijk) += a * this->state(e)(this->ijk);
+            //if (parent_t::div3_mpdata)
+            //{
+	    //  this->vip_state(0, d)(this->ijk) += c * this->vip_state(-2, d)(this->ijk);
+            //}
+          }
 	  else if (eps == 0) //this is the default
           {             
             // for those simulations advecting momentum where the division by mass will not cause division by zero
@@ -157,9 +170,8 @@ namespace libmpdataxx
 	arrvec_t<typename parent_t::arr_t>& vips()
         {
           static thread_local arrvec_t<typename parent_t::arr_t> ret;
-          ret.resize(parent_t::n_dims);
           for (int d = 0; d < parent_t::n_dims; ++d)
-            ret.replace(ret.begin() + d, this->mem->never_delete(&(this->state(vip_ixs[d]))));
+            ret.insert(ret.begin() + d, this->mem->never_delete(&(this->state(vip_ixs[d]))));
           return ret;
         }
 
