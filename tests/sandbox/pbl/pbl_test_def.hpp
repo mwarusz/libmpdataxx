@@ -34,16 +34,20 @@ void set_sgs_specific(params_t &p, smg_tag)
   p.cdrag = 0.1;
 }
 
-template <typename sgs_t>
-void test(const std::string &dirname, const int nt)
+template <typename sgs_t, int opts_arg, int iters_arg, int prs_order_arg>
+void test(const std::string &dirname, const double dt)
 {
+  std::cout << "Calculating: " << dirname << std::endl;
   const int nx = 65, ny = 65, nz = 51;
+  //const int nx = 129, ny = 129, nz = 101;
 
   struct ct_params_t : ct_params_default_t
   {
     using real_t = double;
+    enum { opts = opts_arg};
     enum { n_dims = 3 };
-    enum { n_eqns = 4 };
+    enum { n_eqns = 5 };
+    enum { prs_order = prs_order_arg };
     enum { rhs_scheme = solvers::trapez };
     enum { vip_vab = solvers::impl };
     enum { prs_scheme = solvers::cr };
@@ -51,7 +55,7 @@ void test(const std::string &dirname, const int nt)
     enum { sgs_scheme = std::is_same<sgs_t, smg_tag>::value ? solvers::smg : solvers::iles};
     enum { impl_tht = true };
     struct ix { enum {
-      u, v, w, tht,
+      u, v, w, tht, control,
       vip_i=u, vip_j=v, vip_k=w, vip_den=-1
     }; };
   }; 
@@ -61,8 +65,9 @@ void test(const std::string &dirname, const int nt)
   using solver_t = pbl<ct_params_t>;
 
   typename solver_t::rt_params_t p;
-  p.n_iters = 2;
-  p.dt = 10;
+  p.n_iters = iters_arg;
+  p.dt = dt;
+  int nt = 15000.0 / dt;
   p.di = 50;
   p.dj = 50;
   p.dk = 30;
@@ -78,13 +83,14 @@ void test(const std::string &dirname, const int nt)
   double mixed_length = 500;
   double st = 1e-4 / p.g;
 
-  p.outfreq = 150;
+  p.outfreq = nt + 1;
   p.outwindow = 1;
   p.outvars = {
     {ix::u,   {.name = "u",   .unit = "m/s"}}, 
     {ix::v,   {.name = "v",   .unit = "m/s"}}, 
     {ix::w,   {.name = "w",   .unit = "m/s"}}, 
     {ix::tht,   {.name = "tht",   .unit = "K"}}, 
+    {ix::control,   {.name = "control",   .unit = "K"}}, 
   };
   p.outdir = dirname;
 
@@ -127,6 +133,7 @@ void test(const std::string &dirname, const int nt)
     slv.advectee(ix::w)(i_r, j_r, k_r) = 0.2 * prtrb(i_r, j_r, k_r);
     slv.advectee(ix::u) = 0;
     slv.advectee(ix::v) = 0; 
+    slv.advectee(ix::control) = 1000; 
 
     {
       blitz::thirdIndex k;

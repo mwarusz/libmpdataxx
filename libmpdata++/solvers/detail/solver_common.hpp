@@ -256,6 +256,9 @@ namespace libmpdataxx
                 while (cfl > max_courant);
               }
             }
+	
+            //auto dv = max_abs_vctr_div(this->mem->GC);
+            //if (this->rank == 0) std::cout << "div: " << dv << std::endl;
 
             // once we set the time step
             // for third-order MPDATA we need to calculate time derivatives of the advector field

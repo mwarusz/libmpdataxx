@@ -311,7 +311,7 @@ namespace libmpdataxx
 	intrp<1>(interpolated, this->vip_state(0, 1), jm^ex, this->k^ex, this->i^ex, this->dj);
 	intrp<2>(interpolated, this->vip_state(0, 2), km^ex, this->i^ex, this->j^ex, this->dk);
         this->xchng_vctr_alng(interpolated, /*ad*/ true, /*cyclic*/ true);
-        this->xchng_vctr_nrml(interpolated, this->ijk, /*cyclic*/ true, ex);
+        this->xchng_vctr_nrml(interpolated, this->ijk, /*cyclic*/ false, ex);
       }
 
       void extrapolate_in_time() final

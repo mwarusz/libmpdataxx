@@ -171,6 +171,9 @@ namespace libmpdataxx
 
 	    // donor-cell call 
 	    // TODO: doing antidiff,upstream,antidiff,upstream (for each dimension separately) could help optimise memory consumption!
+            
+            flx[2](i,   j,   0-h) = -flx[2](i,   j,   0+h);
+
 	    donorcell_sum<ct_params_t::opts>(
 	      this->mem->khn_tmp,
               ijk,
@@ -184,6 +187,20 @@ namespace libmpdataxx
               flx[2](i,   j,   k-h),
               formulae::G<ct_params_t::opts, 0>(*this->mem->G, i, j, k)
 	    ); 
+
+            //auto cfl = this->courant_number(this->GC(iter));
+            //this->mem->barrier();
+            //if (this->rank == 0)
+            //{
+            //  //auto avg_vel = max(abs(0.5 * (this->mem->GC[2](rng_t(0, 64),   rng_t(0, 64),   0+h)
+            //  //                                  + this->mem->GC[2](rng_t(0, 64),   rng_t(0, 64),  0-h))));
+            //  //auto avg_bnd_flux = max(abs(0.5 * (flx[2](rng_t(0, 64),   rng_t(0, 64),   0+h) + flx[2](rng_t(0, 64),   rng_t(0, 64),  0-h))));
+            //  //
+            //  //auto ctrl = max(abs(this->state(ct_params_t::ix::control)(rng_t(0, 64),   rng_t(0, 64),   rng_t(0, 50)) - 1000));
+            //  //std::cout << "iter: " << iter << ' ' << cfl << ' ' << avg_bnd_flux << ' ' << ctrl << std::endl;
+            //  std::cout << "iter: " << iter << ' ' << cfl << std::endl;
+            //}
+            //this->mem->barrier();
 
             // sanity check for output
             assert(std::isfinite(sum(psi[n+1](ijk))));
