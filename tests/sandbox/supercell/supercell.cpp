@@ -23,7 +23,7 @@ void test(T eta, const int np, std::string name)
     enum { var_dt = true};
     enum { sgs_scheme = solvers::iles};
     enum { stress_diff = simple ? solvers::normal : solvers::compact};
-    //enum { opts = opts::nug | opts::abs | opts::fct};
+    //enum { opts = opts::nug | opts::abs };
     enum { opts = opts::nug | opts::iga | opts::fct};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
@@ -276,11 +276,11 @@ void test(T eta, const int np, std::string name)
         
       slv.advectee(ix::tht) += delta(i, j, k);
     
-      //const T z_abs = 15000;
-      //slv.vab_coefficient() = where(k * dz >= z_abs,
-      //                               1. / 100 * (k * dz - z_abs) / (length_z - z_abs),
-      //                               0);
-      slv.vab_coefficient() = 0.;
+      const T z_abs = 15000;
+      slv.vab_coefficient() = where(k * dz >= z_abs,
+                                     1. / 100 * (k * dz - z_abs) / (length_z - z_abs),
+                                     0);
+      //slv.vab_coefficient() = 0.;
     }
     
     slv.advectee(ix::thf)(i_r, j_r, k_r) =   slv.advectee(ix::tht)(i_r, j_r, k_r)
@@ -370,8 +370,8 @@ void test(T eta, const int np, std::string name)
 
 int main() 
 {
-  //std::vector<int> nps = {168 / 2}; 
-  std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
+  std::vector<int> nps = {168 / 2}; 
+  //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
   for (const auto np : nps)
   {
     //test(500, np, "out_mdiff_cdt");
@@ -384,6 +384,7 @@ int main()
     //test<true>(500, np, "out_pdiff_vdt97_simple");
     //test<true>(500, np, "out_pdiff_cdt10_simple_rfrc");
     //test<false>(500, np, "out_piotr_cdt5_noprec_upw");
-    test<false>(500, np, "out_piotr_vdt97_fixes");
+    //test<false>(500, np, "out_piotr_cdt5_fixes");
+    test<false>(500, np, "out_piotr_vdt97_convtest_ifc_iles2");
   }
 }

@@ -23,15 +23,35 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   protected:
   // member fields
   using ix = typename ct_params_t::ix;
-  std::ofstream stat_file;
+  std::ofstream humanstat_file, compstat_file;
   real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps;
 
   std::string name;
-  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e;
-  libmpdataxx::arrvec_t<typename parent_t::arr_t> &grad_aux;
+  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e, &qr_est;
+  libmpdataxx::arrvec_t<typename parent_t::arr_t> &qrhs, &grad_aux;
     const libmpdataxx::rng_t ir;
     const libmpdataxx::rng_t jr;
     const libmpdataxx::rng_t kr;
+
+  void check_neg_water(const std::string& str)
+  {
+    auto &qv = this->state(ix::qv);
+    auto &qc = this->state(ix::qc);
+    auto &qr = this->state(ix::qr);
+    this->mem->barrier();
+    if (this->rank == 0)
+    {
+      auto qv_min     = min(qv(ir, jr, kr));
+      auto qc_min     = min(qc(ir, jr, kr));
+      auto qr_min     = min(qr(ir, jr, kr));
+
+      if(qv_min < 0 || qc_min < 0 || qr_min < 0) std::cout << str << std::endl;
+      if (qv_min < 0) std::cout << "fneg qv: " << qv_min << std::endl;
+      if (qc_min < 0) std::cout << "fneg qc: " << qc_min << std::endl;
+      if (qr_min < 0) std::cout << "fneg qr: " << qr_min << std::endl;
+    }
+    this->mem->barrier();
+  }
   
   void save_stats()
   {
@@ -45,7 +65,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     auto &qv = this->state(ix::qv);
     auto &qc = this->state(ix::qc);
     auto &qr = this->state(ix::qr);
-
 
     this->mem->barrier();
     if (this->rank == 0)
@@ -88,12 +107,13 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
                                sum(rho(iri, jri, kri) * (qv(iri, jri, kri) + qc(iri, jri, kri) + qr(iri, jri, kri))) +
                          0.5 * sum(rho(iri, jri, 40)  * (qv(iri, jri, 40)  + qc(iri, jri, 40)  + qr(iri, jri, 40)) ) ;
     
-      stat_file.precision(18);
+      humanstat_file.precision(18);
+      compstat_file.precision(18);
       //stat_file << this->timestep << ' '
       //          << w_min << ' ' << w_max << ' ' << w_avg << ' '
       //          << qc_min << ' ' << qc_max << ' ' << qc_avg << ' '
       //          << qr_min << ' ' << qr_max << ' ' << qr_avg << ' ' << totalws << std::endl;
-      stat_file << "timestep " << this->timestep << std::endl
+      humanstat_file << "timestep " << this->timestep << std::endl
                 << "u  " << u_min << ' ' << u_max << ' ' << u_avg << std::endl
                 << "v  " << v_min << ' ' << v_max << ' ' << v_avg << std::endl
                 << "w  " << w_min << ' ' << w_max << ' ' << w_avg << std::endl
@@ -101,44 +121,15 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
                 << "qv " << qv_min << ' ' << qv_max << ' ' << qv_avg << std::endl
                 << "qc " << qc_min << ' ' << qc_max << ' ' << qc_avg << std::endl
                 << "qr " << qr_min << ' ' << qr_max << ' ' << qr_avg << ' ' << totalws << std::endl;
-    }
-    this->mem->barrier();
-  }
-  void print_stats(const std::string& str)
-  {
-    using namespace libmpdataxx::arakawa_c;
-    this->mem->barrier();
-    if (this->rank == 0)
-    {
-      auto tht_max     = max(this->state(ix::tht)(ir, jr, kr));
-      auto tht_min     = min(this->state(ix::tht)(ir, jr, kr));
       
-      auto qr_max     = max(this->state(ix::qr)(ir, jr, kr));
-      auto qr_min     = min(this->state(ix::qr)(ir, jr, kr));
-      auto qr_sum     = sum(this->state(ix::qr)(ir, jr, kr));
-      
-      auto qv_max     = max(this->state(ix::qv)(ir, jr, kr));
-      auto qv_min     = min(this->state(ix::qv)(ir, jr, kr));
-      auto qv_sum     = sum(this->state(ix::qv)(ir, jr, kr));
-      
-      auto qc_max     = max(this->state(ix::qc)(ir, jr, kr));
-      auto qc_min     = min(this->state(ix::qc)(ir, jr, kr));
-      auto qc_sum     = sum(this->state(ix::qc)(ir, jr, kr));
-
-      auto u_min     = min(this->state(ix::u)(ir, jr, kr));
-      auto u_max     = max(this->state(ix::u)(ir, jr, kr));
-      auto u_sum     = sum(this->state(ix::u)(ir, jr, kr));
-
-      auto w_min     = min(this->state(ix::w)(ir, jr, kr));
-      auto w_max     = max(this->state(ix::w)(ir, jr, kr));
-      auto w_sum     = sum(this->state(ix::w)(ir, jr, kr));
-      auto w_loc     = maxIndex(this->state(ix::w)(ir, jr, kr));
-      std::cout << str << std::endl;
-      std::cout << "ux: " << u_min << ' ' << u_max << ' ' << u_sum << std::endl;
-      std::cout << "uz: " << w_min << ' ' << w_max << ' ' << w_sum << std::endl;
-      std::cout << "qv: " << qv_min << ' ' << qv_max << ' ' << qv_sum << std::endl;
-      std::cout << "qc: " << qc_min << ' ' << qc_max << ' ' << qc_sum << std::endl;
-      std::cout << "qr: " << qr_min << ' ' << qr_max << ' ' << qr_sum << std::endl;
+      compstat_file << this->timestep << ' ' << this->time << ' '
+                    << u_min << ' ' << u_max << ' ' << u_avg << ' '
+                    << v_min << ' ' << v_max << ' ' << v_avg << ' '
+                    << w_min << ' ' << w_max << ' ' << w_avg << ' '
+                    << tht_min << ' ' << tht_max << ' ' << tht_avg << ' '
+                    << qv_min << ' ' << qv_max << ' ' << qv_avg << ' '
+                    << qc_min << ' ' << qc_max << ' ' << qc_avg << ' '
+                    << qr_min << ' ' << qr_max << ' ' << qr_avg << ' ' << totalws << std::endl;
     }
     this->mem->barrier();
   }
@@ -223,7 +214,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     auto &v = this->state(ix::v);
     auto &w = this->state(ix::w);
 
-
     auto &tht = this->state(ix::tht);
     auto &qv = this->state(ix::qv);
     auto &qc = this->state(ix::qc);
@@ -241,7 +231,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
 
     // add diffusion force to full tht forcings
     this->rhs.at(ix::thf)(this->ijk) += tmp1(this->ijk);
-
 
     this->rhs.at(ix::qv)(this->ijk)  += 2.0 * vlap_cmpct(tmp2, 1500., this->ijk, ijkm, this->dijk);
     this->rhs.at(ix::qc)(this->ijk)  += 2.0 * vlap_cmpct(qc , 1500., this->ijk , ijkm, this->dijk);
@@ -297,13 +286,11 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       // modifying forces
       this->rhs.at(ix::qv)(i, j, k)  += - 2 * delta / this->dt;
       this->rhs.at(ix::qc)(i, j, k)  +=   2 * delta / this->dt;
-      this->rhs.at(ix::tht)(i, j, k) +=   2 * L / (cp * pk) * delta / this->dt;
-     
+      this->rhs.at(ix::thf)(i, j, k) +=   2 * L / (cp * pk) * delta / this->dt;
     }
   }
   
-  template<typename tht_t>
-  void update_moist_forces(tht_t &tht)
+  void update_precip_forces(typename parent_t::arr_t &tht, const libmpdataxx::arrvec_t<typename parent_t::arr_t> &qrhs)
   {
     auto &qv = this->state(ix::qv);
     auto &qc = this->state(ix::qc);
@@ -315,8 +302,9 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     for (int k = this->k.first(); k <= this->k.last(); ++k)
     {
       // remove zeros
-      qc(i, j, k) = std::max(0., qc(i, j, k));
-      qr(i, j, k) = std::max(0., qr(i, j, k));
+      //qv(i, j, k) = std::max(0., qv(i, j, k));
+      //qc(i, j, k) = std::max(0., qc(i, j, k));
+      //qr(i, j, k) = std::max(0., qr(i, j, k));
 
       real_t k1 = 1e-3;
       real_t k2 = 2.2;
@@ -336,12 +324,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       real_t qvs = epsa * es / (p - es);
       
       real_t ss = std::min(qv(i, j, k) / qvs - 1, 0.);
-      qvs = qv(i, j, k) / (1. + ss);
-
-      //if (i == 42 && j == 42)
-      //{
-      //  std::cout << k << ' ' << p << ' ' << ss << ' ' << qvs << std::endl;
-      //}
+      qvs = qv(i, j, k) / (1. + ss + 1e-16);
 
       real_t EP = 1./ rho(i, j, k) * ss * C *
                   std::pow(1e-3 * rho(i, j, k) * qr(i, j, k), 0.525)
@@ -353,34 +336,20 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       real_t devp = EP;
       
       // limiting
-      dcol = std::min(dcol, qc(i, j, k) / this->dt);
-      devp = std::max(devp, -qr(i, j, k) / this->dt - dcol);
+      dcol = std::min(dcol,  qc(i, j, k) / this->dt + qrhs[2](i, j, k));
+      devp = std::max(devp, -qr(i, j, k) / this->dt - qrhs[3](i, j, k) - dcol);
 
       // modifying forces
       this->rhs.at(ix::qv)(i, j, k)  = -devp;
       this->rhs.at(ix::qc)(i, j, k)  = -dcol;
       this->rhs.at(ix::qr)(i, j, k)  = devp + dcol;
-      this->rhs.at(ix::tht)(i, j, k) = L / (cp * pk) * devp;
-      
-      //precip
-      //real_t rho_g = rho(i, j, 0);
-      //real_t rho_k = rho(i, j, k);
-      //real_t rho_kp1 = rho(i, j, k + 1);
-      //real_t qr_k = qr(i, j, k);
-      //real_t qr_kp1 = qr(i, j, k + 1);
-
-      //real_t vr_k = 36.34 * std::pow(1e-3 * rho_k * qr_k, 0.1364) * std::pow(rho_k / rho_g, -0.5);
-      //real_t vr_kp1 = 36.34 * std::pow(1e-3 * rho_kp1 * qr_kp1, 0.1364) * std::pow(rho_kp1 / rho_g, -0.5);
-
-      //real_t sed = (rho_kp1 * vr_kp1 * qr_kp1 - rho_k * vr_k * qr_k) / (rho_k * this->dk);
-      //sed = (k == this->k.last()) ? - qr_k * vr_k / (0.5 * this->dk) : sed;
-      //this->rhs.at(ix::qr)(i, j, k)  += 2 * sed;
+      this->rhs.at(ix::thf)(i, j, k) = L / (cp * pk) * devp;
     }
   }
  
-  void sedimentation()
+  void sedimentation(const typename parent_t::arr_t &qr)
   {
-    auto &qr = this->state(ix::qr);
+    //auto &qr = this->state(ix::qr);
     auto &rho = *this->mem->G;
 
     for (int i = this->i.first(); i <= this->i.last(); ++i)
@@ -395,7 +364,10 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
         real_t vr_kmh = -36.34 * rho_h * this->dt / this->dk * 
               std::pow(1e-3 * rho_h * qr_h, 0.1346) * std::pow(rho_h / rho_g, -0.5);
         
-        tmp1(i, j, lk)  = qr(i, j, lk) / (1 - vr_kmh / rho(i, j, lk));
+        //tmp1(i, j, lk)  = qr(i, j, lk) / (1 - vr_kmh / rho(i, j, lk));
+       
+        // no flux
+        tmp1(i, j, lk)  = std::max(0., qr(i, j, lk)) / (1 + 2 *  vr_kmh / rho(i, j, lk));
         
         this->rhs.at(ix::qr)(i, j, lk)  += (tmp1(i, j, lk) - qr(i, j, lk)) / this->dt;
 
@@ -416,14 +388,13 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
           tmp1(i, j, k) = (qr(i, j, k) - 1. / rho(i, j, k) * vr_kph * tmp1(i, j, k + 1)) / (1 - vr_kmh / rho(i, j, k));
           this->rhs.at(ix::qr)(i, j, k)  += (tmp1(i, j, k) - qr(i, j, k)) / this->dt;
           
-          //if (i == 42 && j == 42)
-          //{
-          //  std::cout << "test " << k << ' ' << rho_h << ' ' << qr_h << ' ' << tmp1(i, j, k) << ' ' << faux1 << std::endl;
-          //}
         }
         real_t vr_kph = vr_kmh;
           
-        tmp1(i, j, 0) = (qr(i, j, 0) - 1. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1)) / (1 - vr_kmh / rho(i, j, 0));
+        //tmp1(i, j, 0) = (qr(i, j, 0) - 1. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1)) / (1 - vr_kmh / rho(i, j, 0));
+       
+        // no flux
+        tmp1(i, j, 0) = (qr(i, j, 0) - 2. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1));
         
         this->rhs.at(ix::qr)(i, j, 0)  += (tmp1(i, j, 0) - qr(i, j, 0)) / this->dt;
       }
@@ -441,7 +412,9 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   {
     if (this->rank == 0)
     {
-      stat_file.open(name.c_str());
+      humanstat_file.open(name.c_str());
+      std::string compname = "c" + name;
+      compstat_file.open(compname.c_str());
     }
 
     calc_dtht_e();
@@ -457,7 +430,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     const int &at 
   ) 
   {
-    parent_t::update_rhs(rhs, dt, at); 
     
     auto &tht = this->state(ix::tht);
     auto &thf = this->state(ix::thf);
@@ -465,15 +437,6 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     auto &qc = this->state(ix::qc);
     auto &qr = this->state(ix::qr);
     
-    //tmp2(this->ijk) = this->state(ix::tht)(this->ijk) + tht_e(this->ijk);
-
-    //if (at > 0)
-    //{
-    //  //update_moist_forces();
-    //}
-    
-    //this->state(ix::tht)(this->ijk) = tmp2(this->ijk) - tht_e(this->ijk);
-
     const auto &ijk = this->ijk;
     auto ix_w = this->vip_ixs[ct_params_t::n_dims - 1];
     const auto &tht_abs = *this->mem->vab_coeff;
@@ -482,45 +445,101 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     {
       case (0):
       {
-        //rhs.at(ix::tht)(ijk) += -w(ijk) * this->dtht_e(ijk);
-
-        //rhs.at(ix_w)(ijk) += this->g * (
-        //        ( tht(ijk) / this->tht_b(ijk)
-        //        + buoy_eps * (this->state(ix::qv)(ijk) - this->qv_e(ijk))
-        //        - this->state(ix::qc)(ijk) - this->state(ix::qr)(ijk) 
-        //        ));
+        // zero rhs for all equations
+        for (int e = 0; e < 8; ++e)
+        {
+          rhs.at(e)(ijk) = 0;
+        }
 
         break;
       }
       case (1):
       {
-        tmp2(ijk) = tht(ijk) + tht_e(ijk);
+        // zero rhs for dynamic equations
+        for (int e = 0; e < 4; ++e)
+        {
+          rhs.at(e)(ijk) = 0;
+        }
+        
+        qrhs[0](ijk) = this->rhs.at(ix::thf)(ijk);
+        qrhs[1](ijk) = this->rhs.at(ix::qv)(ijk);
+        qrhs[2](ijk) = this->rhs.at(ix::qc)(ijk);
+        qrhs[3](ijk) = this->rhs.at(ix::qr)(ijk);
 
-        update_moist_forces(thf);
+        //tmp2(ijk) = tht(ijk) + tht_e(ijk);
+
+        update_precip_forces(thf, qrhs);
+
+        // construct estimate of qr without fallout
+        qr_est(ijk) = max(0., qr(ijk) + this->dt * (qrhs[3](ijk) + this->rhs.at(ix::qr)(ijk)));
        
+        //this->state(ix::qr)(this->ijk) = max(0., this->state(ix::qr)(this->ijk));
+        
+        sedimentation(qr_est);
+
+        //this->state(ix::qr)(this->ijk) += this->dt * this->rhs.at(ix::qr)(this->ijk);
+        //this->rhs.at(ix::qr)(this->ijk) = 0;        
+        
+        check_neg_water("neg_water before trapezoidal forces");
+        
+        // apply trapezoidal part of force
+        this->state(ix::thf)(ijk) += 0.5 * this->dt * qrhs[0](ijk);
+        qv(ijk) += 0.5 * this->dt * qrhs[1](ijk);
+        qc(ijk) += 0.5 * this->dt * qrhs[2](ijk);
+        qr(ijk) += 0.5 * this->dt * qrhs[3](ijk);
+        
+        check_neg_water("neg_water after trapezoidal forces");
+        
+        // limit precipitation forces
+        //this->rhs.at(ix::qc)(ijk) = max(-qc(ijk) / this->dt, this->rhs.at(ix::qc)(ijk));
+        //this->rhs.at(ix::qr)(ijk) = max(-qr(ijk) / this->dt, this->rhs.at(ix::qr)(ijk));
+
+        // limit precipitation forces and restore conservation
+        for (int i = this->i.first(); i <= this->i.last(); ++i)
+        for (int j = this->j.first(); j <= this->j.last(); ++j)
+        for (int k = this->k.first(); k <= this->k.last(); ++k)
+        {
+          auto fqc_lm = std::max(-qc(i, j, k) / this->dt, this->rhs.at(ix::qc)(i, j, k));
+          auto fqr_lm = std::max(-qr(i, j, k) / this->dt, this->rhs.at(ix::qr)(i, j, k));
+          auto delql = fqc_lm - this->rhs.at(ix::qc)(i, j, k) + fqr_lm - this->rhs.at(ix::qr)(i, j, k);
+
+          auto fqv_adj = this->rhs.at(ix::qv)(i, j, k) - delql;
+          
+          const real_t pk = pk_e(i, j, k);
+          auto fthf_adj = this->rhs.at(ix::thf)(i, j, k) + 2 * L / (cp * pk) * delql;
+
+          this->rhs.at(ix::qv)(i, j, k) = fqv_adj;
+          this->rhs.at(ix::qc)(i, j, k) = fqc_lm;
+          this->rhs.at(ix::qr)(i, j, k) = fqr_lm;
+          this->rhs.at(ix::thf)(i, j, k) = fthf_adj;
+        }
+
         // apply precipitation temp force to both full tht and tht perturbation
-        this->state(ix::thf)(this->ijk) += this->dt * this->rhs.at(ix::tht)(this->ijk);
-        this->state(ix::tht)(this->ijk) += this->dt * this->rhs.at(ix::tht)(this->ijk);
+        this->state(ix::thf)(ijk) += this->dt * this->rhs.at(ix::thf)(ijk);
+        this->state(ix::tht)(ijk) += this->dt * this->rhs.at(ix::thf)(ijk);
 
-        this->state(ix::qv)(this->ijk)  += this->dt * this->rhs.at(ix::qv)(this->ijk);
-        this->state(ix::qc)(this->ijk)  += this->dt * this->rhs.at(ix::qc)(this->ijk);
-        this->state(ix::qr)(this->ijk)  += this->dt * this->rhs.at(ix::qr)(this->ijk);
+        //qv(ijk)  += this->dt * this->rhs.at(ix::qv)(ijk);
+        //qc(ijk)  += this->dt * this->rhs.at(ix::qc)(ijk);
+        //qr(ijk)  += this->dt * this->rhs.at(ix::qr)(ijk);
         
-        this->rhs.at(ix::tht)(this->ijk) = 0;
-        this->rhs.at(ix::qv)(this->ijk) = 0;
-        this->rhs.at(ix::qc)(this->ijk) = 0;
-        this->rhs.at(ix::qr)(this->ijk) = 0;        
-
-        this->state(ix::qr)(this->ijk) = max(0., this->state(ix::qr)(this->ijk));
+        qv(ijk)  = max(0., qv(ijk) + this->dt * this->rhs.at(ix::qv)(ijk));
+        qc(ijk)  = max(0., qc(ijk) + this->dt * this->rhs.at(ix::qc)(ijk));
+        qr(ijk)  = max(0., qr(ijk) + this->dt * this->rhs.at(ix::qr)(ijk));
         
-        sedimentation();
-        this->state(ix::qr)(this->ijk) += this->dt * this->rhs.at(ix::qr)(this->ijk);
-        this->rhs.at(ix::qr)(this->ijk) = 0;        
+        check_neg_water("neg_water after precip forces");
+        
+        // zero moist forces
+        this->rhs.at(ix::thf)(ijk) = 0;
+        this->rhs.at(ix::qv)(ijk) = 0;
+        this->rhs.at(ix::qc)(ijk) = 0;
+        this->rhs.at(ix::qr)(ijk) = 0;        
         
         saturation_adjustment(thf);
         
-        // add condensation force to full tht forcings
-        this->rhs.at(ix::thf)(this->ijk) += this->rhs.at(ix::tht)(this->ijk);
+        check_neg_water("neg_water after condensation");
+        
+        // add condensation force to perturbation tht forcings
+        this->rhs.at(ix::tht)(this->ijk) += this->rhs.at(ix::thf)(this->ijk);
 
         // apply condensation before calculating buoyancy
         this->state(ix::tht)(this->ijk) += 0.5 * this->dt * this->rhs.at(ix::tht)(this->ijk);
@@ -535,16 +554,30 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     }
   }
 
-  void hook_mixed_rhs()
+  void hook_mixed_rhs_ante_step()
   {
+    //this->apply_rhs(this->dt / 2);
+
+    // only apply rhs for dynamic equations
+    for (int e = 0; e < 4; ++e)
+    {
+      this->state(e)(this->ijk) += 0.5 * this->dt * this->rhs.at(e)(this->ijk);
+    }
+
+    if (this->rank == 0) std::cout << "timestep: " << this->timestep << std::endl;
+    check_neg_water("neg_water in mixed_ante_step");
+    
+    // advec moist forcings with upwind
+    this->self_advec_donorcell(this->rhs.at(ix::qv));
+    this->self_advec_donorcell(this->rhs.at(ix::qc));
+    this->self_advec_donorcell(this->rhs.at(ix::qr));
+    this->self_advec_donorcell(this->rhs.at(ix::thf));
+  }
+
+  void hook_mixed_rhs_post_step()
+  {
+    this->update_rhs(this->rhs, this->dt / 2, 1);
     this->state(ix::w)(this->ijk) += 0.5 * this->dt * this->rhs.at(ix::w)(this->ijk);
-    //this->mem->barrier();
-    //if (this->rank == 0)
-    //{
-    //  auto w_max  = max(this->state(ix::w)(ir, jr, kr));
-    //  std::cout << "after exp b: " << this->timestep << ' ' << w_max << std::endl;
-    //}
-    //this->mem->barrier();
   }
 
   void vip_rhs_impl_fnlz()
@@ -563,37 +596,27 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
                (1 + 0.5 * this->dt * tht_abs(ijk));
     
     this->rhs.at(ix::tht)(ijk) += -w(ijk) * this->dtht_e(ijk) - tht_abs(ijk) * tht(ijk);
-    
-    //this->mem->barrier();
-    //if (this->rank == 0)
-    //{
-    //  auto w_max  = max(this->state(ix::w)(ir, jr, kr));
-    //  std::cout << "after prs solver: " << this->timestep << ' ' << w_max << std::endl;
-    //}
-    //this->mem->barrier();
   }
   
   void hook_ante_step()
   {
     save_stats();
 
-    //if (this->rank == 0) std::cout << "itime, time: " << this->timestep+1 << ' ' << this->time / 60.  << std::endl;
-    //print_stats("before half");
     parent_t::hook_ante_step();
 
-    this->state(ix::qc)(this->ijk) = max(0., this->state(ix::qc)(this->ijk));
-    this->state(ix::qr)(this->ijk) = max(0., this->state(ix::qr)(this->ijk));
-    
-
-    this->mem->barrier();
+    //this->state(ix::qv)(this->ijk) = max(0., this->state(ix::qv)(this->ijk));
+    //this->state(ix::qc)(this->ijk) = max(0., this->state(ix::qc)(this->ijk));
+    //this->state(ix::qr)(this->ijk) = max(0., this->state(ix::qr)(this->ijk));
+    //this->mem->barrier();
   }
 
 
   void hook_post_step()
   {
     parent_t::hook_post_step();
+    //this->mem->barrier();
     
-    diffusion_cmpct();
+    //diffusion_cmpct();
     
     this->state(ix::thf)(this->ijk) = this->state(ix::tht)(this->ijk) + tht_e(this->ijk);
   }
@@ -630,7 +653,9 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     tmp2(args.mem->tmp[__FILE__][4][1]),
     u_e(args.mem->tmp[__FILE__][5][0]),
     dtht_e(args.mem->tmp[__FILE__][6][0]),
-    grad_aux(args.mem->tmp[__FILE__][7]),
+    qr_est(args.mem->tmp[__FILE__][7][0]),
+    qrhs(args.mem->tmp[__FILE__][8]),
+    grad_aux(args.mem->tmp[__FILE__][9]),
     ir(0, p.grid_size[0] - 1),
     jr(0, p.grid_size[1] - 1),
     kr(0, p.grid_size[2] - 1)
@@ -646,6 +671,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     parent_t::alloc_tmp_sclr(mem, __FILE__, 2); // tmp1, tmp2
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "u_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "dtht_e");
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 1); // qr_est
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 4, "qrhs");
     parent_t::alloc_tmp_vctr(mem, __FILE__); // grad_aux
   }
 };
