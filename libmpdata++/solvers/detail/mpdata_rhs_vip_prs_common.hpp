@@ -16,12 +16,12 @@ namespace libmpdataxx
   {
     namespace detail
     {
-      template <class ct_params_t>
-      class mpdata_rhs_vip_prs_common : public mpdata_rhs_vip<ct_params_t>
+      template <class ct_params_t, int minhalo>
+      class mpdata_rhs_vip_prs_common : public mpdata_rhs_vip<ct_params_t, minhalo>
       {
-	using parent_t = mpdata_rhs_vip<ct_params_t>;
+	using parent_t = mpdata_rhs_vip<ct_params_t, minhalo>;
         using ix = typename ct_params_t::ix;
-	using ijk_t = decltype(mpdata_rhs_vip_prs_common<ct_params_t>::ijk);
+	using ijk_t = decltype(mpdata_rhs_vip_prs_common<ct_params_t, minhalo>::ijk);
 
         public:
         using real_t = typename ct_params_t::real_t;
@@ -123,6 +123,12 @@ namespace libmpdataxx
 	  {
             pressure_solver_loop_body(simple);
 	    iters++;
+
+            if (iters > 10000) // going beyond 10000 iters means something is really wrong,
+                               // usually boundary conditions but not always !
+            {
+              throw std::runtime_error("stuck in pressure solver");
+            }
           }
 
           if (this->rank == 0) std::cout << "cr iters: " << iters << std::endl;
@@ -141,7 +147,7 @@ namespace libmpdataxx
           }
 	}
 
-        void hook_ante_loop(const int nt)
+        void hook_ante_loop(const typename parent_t::advance_arg_t nt)
         {
           // save initial edge velocities
           this->save_edges(this->vips(), this->ijk);

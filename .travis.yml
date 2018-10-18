@@ -48,11 +48,9 @@ before_install:
     - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then sudo apt-get update; fi
     - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then export apt_get_install="apt-get install --no-install-recommends -t trusty -y"; fi
     - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then brew update; fi
-    - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then brew tap homebrew/science; fi
 
     # fixing broken OSX gzip tools
     - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then export PATH=/usr/local/bin:$PATH; fi # so that brew-installed ones are first
-    - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then brew tap homebrew/dupes; fi
     - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then brew install gzip; fi
      
     # to avoid problems with plotting by paraview on Travis
@@ -66,6 +64,9 @@ before_install:
     - export PY3DEB=""
     - if [[ $TRAVIS_OS_NAME == 'linux' && $COMPILER == 'g++' ]]; then PY3DEB=3; fi
     - if [[ $PY3DEB != '' ]]; then sudo apt-get install python3-dev; fi
+   
+    # upgrade pip
+    - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then sudo pip install --upgrade pip; fi 
  
 install:
     # silence the gazillion warnings coming from blitz headers when using the osx clang
