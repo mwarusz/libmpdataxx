@@ -101,9 +101,9 @@ namespace libmpdataxx
 
 	void pressure_solver_update(bool simple = false)
         {
-          if (ct_params_t::var_dt)
+          if (ct_params_t::var_dt && this->timestep > 0)
           {
-            err_tol *= this->prev_dt / this->dt;
+            err_tol *= this->dt_stash[0] / this->dt;
           }
 
           for (int d = 0; d < parent_t::n_dims; ++d)
