@@ -24,10 +24,10 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   // member fields
   using ix = typename ct_params_t::ix;
   std::ofstream humanstat_file, compstat_file;
-  real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps;
+  real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps, initial_totalws;
 
   std::string name;
-  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e, &qr_est;
+  typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e, &qr_est, &col_sed;
   libmpdataxx::arrvec_t<typename parent_t::arr_t> &qrhs, &grad_aux;
     const libmpdataxx::rng_t ir;
     const libmpdataxx::rng_t jr;
@@ -69,7 +69,8 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     this->mem->barrier();
     if (this->rank == 0)
     {
-      int np = (ir.last() + 1) * (jr.last() + 1) * 41;
+      int nz = this->kr.last() + 1;
+      int np = (ir.last() + 1) * (jr.last() + 1) * nz;
       
       auto tht_max     = max(tht(ir, jr, kr));
       auto tht_min     = min(tht(ir, jr, kr));
@@ -101,11 +102,20 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     
       const libmpdataxx::rng_t iri(ir.first(), ir.last() - 1);
       const libmpdataxx::rng_t jri(jr.first(), jr.last() - 1);
-      const libmpdataxx::rng_t kri(1, 39);
+      const libmpdataxx::rng_t kri(1, nz - 2);
       
       auto totalws     = 0.5 * sum(rho(iri, jri, 0)   * (qv(iri, jri, 0)   + qc(iri, jri, 0)   + qr(iri, jri, 0))  ) +
                                sum(rho(iri, jri, kri) * (qv(iri, jri, kri) + qc(iri, jri, kri) + qr(iri, jri, kri))) +
-                         0.5 * sum(rho(iri, jri, 40)  * (qv(iri, jri, 40)  + qc(iri, jri, 40)  + qr(iri, jri, 40)) ) ;
+                         0.5 * sum(rho(iri, jri, nz - 1)  * (qv(iri, jri, nz - 1)  + qc(iri, jri, nz - 1)  + qr(iri, jri, nz - 1)) ) ;
+
+      if (this->timestep == 0)
+      {
+        initial_totalws = totalws;
+      }
+
+      auto water_change = 100. * (totalws / initial_totalws - 1.);
+      
+      auto prec_rate  = -this->di * this->dj * this->dk / this->dt * sum(col_sed(iri, jri, 0)) / 1e5;
     
       humanstat_file.precision(18);
       compstat_file.precision(18);
@@ -113,23 +123,26 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       //          << w_min << ' ' << w_max << ' ' << w_avg << ' '
       //          << qc_min << ' ' << qc_max << ' ' << qc_avg << ' '
       //          << qr_min << ' ' << qr_max << ' ' << qr_avg << ' ' << totalws << std::endl;
-      humanstat_file << "timestep " << this->timestep << std::endl
+      humanstat_file << "timestep/time/dt " << this->timestep << ' ' << this->time << ' ' << this->dt << std::endl
                 << "u  " << u_min << ' ' << u_max << ' ' << u_avg << std::endl
                 << "v  " << v_min << ' ' << v_max << ' ' << v_avg << std::endl
                 << "w  " << w_min << ' ' << w_max << ' ' << w_avg << std::endl
                 << "th " << tht_min << ' ' << tht_max << ' ' << tht_avg << std::endl
                 << "qv " << qv_min << ' ' << qv_max << ' ' << qv_avg << std::endl
                 << "qc " << qc_min << ' ' << qc_max << ' ' << qc_avg << std::endl
-                << "qr " << qr_min << ' ' << qr_max << ' ' << qr_avg << ' ' << totalws << std::endl;
+                << "qr " << qr_min << ' ' << qr_max << ' ' << qr_avg << std::endl
+                << "totalws/change "<< totalws << ' ' << water_change << std::endl
+                << "prec_rate " << prec_rate << std::endl;
       
-      compstat_file << this->timestep << ' ' << this->time << ' '
+      compstat_file << this->timestep << ' ' << this->time << ' ' << this->dt << ' '
                     << u_min << ' ' << u_max << ' ' << u_avg << ' '
                     << v_min << ' ' << v_max << ' ' << v_avg << ' '
                     << w_min << ' ' << w_max << ' ' << w_avg << ' '
                     << tht_min << ' ' << tht_max << ' ' << tht_avg << ' '
                     << qv_min << ' ' << qv_max << ' ' << qv_avg << ' '
                     << qc_min << ' ' << qc_max << ' ' << qc_avg << ' '
-                    << qr_min << ' ' << qr_max << ' ' << qr_avg << ' ' << totalws << std::endl;
+                    << qr_min << ' ' << qr_max << ' ' << qr_avg << ' '
+                    << totalws << ' ' << water_change << ' ' << prec_rate << std::endl;
     }
     this->mem->barrier();
   }
@@ -364,12 +377,13 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
         real_t vr_kmh = -36.34 * rho_h * this->dt / this->dk * 
               std::pow(1e-3 * rho_h * qr_h, 0.1346) * std::pow(rho_h / rho_g, -0.5);
         
-        //tmp1(i, j, lk)  = qr(i, j, lk) / (1 - vr_kmh / rho(i, j, lk));
+        tmp1(i, j, lk)  = qr(i, j, lk) / (1 - vr_kmh / rho(i, j, lk));
        
         // no flux
-        tmp1(i, j, lk)  = std::max(0., qr(i, j, lk)) / (1 + 2 *  vr_kmh / rho(i, j, lk));
+        //tmp1(i, j, lk)  = std::max(0., qr(i, j, lk)) / (1 + 2 *  vr_kmh / rho(i, j, lk));
         
         this->rhs.at(ix::qr)(i, j, lk)  += (tmp1(i, j, lk) - qr(i, j, lk)) / this->dt;
+        col_sed(i, j, 0) = 0.5 * rho(i, j, lk) * (tmp1(i, j, lk) - qr(i, j, lk));
 
         for (int k = this->k.last() - 1; k > 0; --k)
         {
@@ -387,16 +401,18 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
 
           tmp1(i, j, k) = (qr(i, j, k) - 1. / rho(i, j, k) * vr_kph * tmp1(i, j, k + 1)) / (1 - vr_kmh / rho(i, j, k));
           this->rhs.at(ix::qr)(i, j, k)  += (tmp1(i, j, k) - qr(i, j, k)) / this->dt;
+          col_sed(i, j, 0) += rho(i, j, k) * (tmp1(i, j, k) - qr(i, j, k));
           
         }
         real_t vr_kph = vr_kmh;
           
-        //tmp1(i, j, 0) = (qr(i, j, 0) - 1. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1)) / (1 - vr_kmh / rho(i, j, 0));
+        tmp1(i, j, 0) = (qr(i, j, 0) - 1. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1)) / (1 - vr_kmh / rho(i, j, 0));
        
         // no flux
-        tmp1(i, j, 0) = (qr(i, j, 0) - 2. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1));
+        //tmp1(i, j, 0) = (qr(i, j, 0) - 2. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1));
         
         this->rhs.at(ix::qr)(i, j, 0)  += (tmp1(i, j, 0) - qr(i, j, 0)) / this->dt;
+        col_sed(i, j, 0) += 0.5 * rho(i, j, 0) * (tmp1(i, j, 0) - qr(i, j, 0));
       }
     }
 
@@ -418,6 +434,9 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     }
 
     calc_dtht_e();
+
+    save_stats();
+
     parent_t::hook_ante_loop(nt);
   }
   
@@ -600,7 +619,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   
   void hook_ante_step()
   {
-    save_stats();
+    //save_stats();
 
     parent_t::hook_ante_step();
 
@@ -616,9 +635,11 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     parent_t::hook_post_step();
     //this->mem->barrier();
     
-    //diffusion_cmpct();
+    diffusion_cmpct();
     
     this->state(ix::thf)(this->ijk) = this->state(ix::tht)(this->ijk) + tht_e(this->ijk);
+    
+    save_stats();
   }
 
   public:
@@ -654,8 +675,9 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     u_e(args.mem->tmp[__FILE__][5][0]),
     dtht_e(args.mem->tmp[__FILE__][6][0]),
     qr_est(args.mem->tmp[__FILE__][7][0]),
-    qrhs(args.mem->tmp[__FILE__][8]),
-    grad_aux(args.mem->tmp[__FILE__][9]),
+    col_sed(args.mem->tmp[__FILE__][8][0]),
+    qrhs(args.mem->tmp[__FILE__][9]),
+    grad_aux(args.mem->tmp[__FILE__][10]),
     ir(0, p.grid_size[0] - 1),
     jr(0, p.grid_size[1] - 1),
     kr(0, p.grid_size[2] - 1)
@@ -672,6 +694,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "u_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "dtht_e");
     parent_t::alloc_tmp_sclr(mem, __FILE__, 1); // qr_est
+    parent_t::alloc_tmp_sclr(mem, __FILE__, 1, "", true); // col_sed
     parent_t::alloc_tmp_sclr(mem, __FILE__, 4, "qrhs");
     parent_t::alloc_tmp_vctr(mem, __FILE__); // grad_aux
   }

@@ -24,7 +24,8 @@ void test(T eta, const int np, std::string name)
     enum { sgs_scheme = solvers::iles};
     enum { stress_diff = simple ? solvers::normal : solvers::compact};
     //enum { opts = opts::nug | opts::abs };
-    enum { opts = opts::nug | opts::iga | opts::fct};
+    enum { opts = opts::nug | opts::iga | opts::div_2nd | opts::div_3rd | opts::fct};
+    enum { sptl_intrp = solvers::aver4};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
     enum { n_eqns = 8 };
@@ -79,7 +80,7 @@ void test(T eta, const int np, std::string name)
   
   if (ct_params_t::var_dt)
   {
-    p.max_courant = 0.97;
+    p.max_courant = 0.80;
   }
 
   if (ct_params_t::var_dt)
@@ -322,25 +323,8 @@ void test(T eta, const int np, std::string name)
                                  + 0.5 * qv_e(0, 0, nz - 1) * rho_b(0, 0, nz - 1)
                                        << std::endl;
   }
-  
 
   std::cout << "Calculating: " << p.outdir << std::endl; 
-
-  std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 
-  std::cout << "MIN V   " << min(slv.advectee(ix::v)) << std::endl; 
-  std::cout << "MIN W   " << min(slv.advectee(ix::w)) << std::endl; 
-  std::cout << "MIN THT " << min(slv.advectee(ix::tht)) << std::endl; 
-  std::cout << "MIN QV  " << min(slv.advectee(ix::qv)) << std::endl; 
-  std::cout << "MIN QC  " << min(slv.advectee(ix::qc)) << std::endl; 
-  std::cout << "MIN QR  " << min(slv.advectee(ix::qr)) << std::endl; 
-
-  std::cout << "MAX U   " << max(slv.advectee(ix::u)) << std::endl; 
-  std::cout << "MAX V   " << max(slv.advectee(ix::v)) << std::endl; 
-  std::cout << "MAX W   " << max(slv.advectee(ix::w)) << std::endl; 
-  std::cout << "MAX THT " << max(slv.advectee(ix::tht)) << std::endl; 
-  std::cout << "MAX QV  " << max(slv.advectee(ix::qv)) << std::endl; 
-  std::cout << "MAX QC  " << max(slv.advectee(ix::qc)) << std::endl; 
-  std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
 
   // integration
   if (ct_params_t::var_dt)
@@ -351,27 +335,12 @@ void test(T eta, const int np, std::string name)
   {
     slv.advance(nt);
   }
-
-  std::cout.precision(18);
-  std::cout << "MIN U   " << min(slv.advectee(ix::u)) << std::endl; 
-  std::cout << "MIN W   " << min(slv.advectee(ix::w)) << std::endl; 
-  std::cout << "MIN THT " << min(slv.advectee(ix::tht)) << std::endl; 
-  std::cout << "MIN QV  " << min(slv.advectee(ix::qv)) << std::endl; 
-  std::cout << "MIN QC  " << min(slv.advectee(ix::qc)) << std::endl; 
-  std::cout << "MIN QR  " << min(slv.advectee(ix::qr)) << std::endl; 
-
-  std::cout << "MAX U   " << max(slv.advectee(ix::u)) << std::endl; 
-  std::cout << "MAX W   " << max(slv.advectee(ix::w)) << std::endl; 
-  std::cout << "MAX THT " << max(slv.advectee(ix::tht)) << std::endl; 
-  std::cout << "MAX QV  " << max(slv.advectee(ix::qv)) << std::endl; 
-  std::cout << "MAX QC  " << max(slv.advectee(ix::qc)) << std::endl; 
-  std::cout << "MAX QR  " << max(slv.advectee(ix::qr)) << std::endl; 
 }
 
 int main() 
 {
-  std::vector<int> nps = {168 / 2}; 
-  //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
+  //std::vector<int> nps = {168}; 
+  std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
   for (const auto np : nps)
   {
     //test(500, np, "out_mdiff_cdt");
@@ -385,6 +354,6 @@ int main()
     //test<true>(500, np, "out_pdiff_cdt10_simple_rfrc");
     //test<false>(500, np, "out_piotr_cdt5_noprec_upw");
     //test<false>(500, np, "out_piotr_cdt5_fixes");
-    test<false>(500, np, "out_piotr_vdt97_convtest_ifc_iles2");
+    test<false>(500, np, "out_phd_vdt80_Mg3No_diff");
   }
 }
