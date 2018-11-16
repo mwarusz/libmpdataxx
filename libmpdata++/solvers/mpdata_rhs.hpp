@@ -74,8 +74,6 @@ namespace libmpdataxx
         for (int e = 0; e < parent_t::n_eqns; ++e) this->xchng(e);
       }
 
-      virtual void hook_mixed_rhs() {}
-
       virtual void apply_rhs(
         const typename parent_t::real_t &dt_arg
       ) final
@@ -144,7 +142,6 @@ namespace libmpdataxx
           case rhs_scheme_t::euler_b: 
             break;
           case rhs_scheme_t::trapez:
-          case rhs_scheme_t::mixed:
             update_rhs(rhs, this->dt / 2, n);
             break;
           case rhs_scheme_t::mixed:
@@ -173,7 +170,6 @@ namespace libmpdataxx
             apply_rhs(this->dt); 
             break;
           case rhs_scheme_t::trapez: 
-          case rhs_scheme_t::mixed:
             apply_rhs(this->dt / 2); 
             break;
           case rhs_scheme_t::mixed: 
