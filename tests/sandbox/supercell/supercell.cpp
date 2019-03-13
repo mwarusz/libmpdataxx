@@ -13,18 +13,18 @@ using T = double;
 
 const T pi = std::acos(-1.0);
 
-template <bool simple>
-void test(T eta, const int np, std::string name)
+template <bool simple, int opts_arg>
+void test(T v_mult, const int np, std::string name)
 {
   // compile-time parameters
   struct ct_params_t : ct_params_default_t
   {
     using real_t = T;
     enum { var_dt = true};
+    enum { opts = opts_arg};
     enum { sgs_scheme = solvers::iles};
     enum { stress_diff = simple ? solvers::normal : solvers::compact};
     //enum { opts = opts::nug | opts::abs };
-    enum { opts = opts::nug | opts::iga | opts::div_2nd | opts::div_3rd | opts::fct};
     enum { sptl_intrp = solvers::aver4};
     enum { vip_vab = solvers::impl};
     enum { n_dims = 3 };
@@ -39,24 +39,25 @@ void test(T eta, const int np, std::string name)
   using ix = typename ct_params_t::ix;
   using real_t = typename ct_params_t::real_t;
 
-  const int scale = 336 / np;
+  const double scale = 336. / np;
 
   const T sim_time = 7200;
 
-  const int nx = np, ny = np, nz = 41;
+  const int nx = np + 1, ny = np + 1, nz = 41;
 
   using slv_out_t = typename output::hdf5_xdmf<supercell<ct_params_t>>;
   // run-time parameters
   typename slv_out_t::rt_params_t p;
 
-  T length_x = 167e3;
-  T length_y = 167e3;
+  T length_x = 168e3;
+  T length_y = 168e3;
   T length_z = 20e3;
 
   T dx = length_x / (nx - 1);
   T dy = length_y / (ny - 1);
   T dz = length_z / (nz - 1);
 
+  p.v_mult = v_mult;
   if (ct_params_t::var_dt)
   {
     p.dt = 3.0 * scale;
@@ -76,11 +77,10 @@ void test(T eta, const int np, std::string name)
   p.prs_tol = 1e-5;
   p.grid_size = {nx, ny, nz};
   p.n_iters = 2;
-  //p.eta = eta;
   
   if (ct_params_t::var_dt)
   {
-    p.max_courant = 0.80;
+    p.max_courant = 0.8;
   }
 
   if (ct_params_t::var_dt)
@@ -339,21 +339,35 @@ void test(T eta, const int np, std::string name)
 
 int main() 
 {
-  //std::vector<int> nps = {168}; 
-  std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
-  for (const auto np : nps)
+  //std::vector<double> vms = {0.2, 0.4, 0.6, 0.8};
+  std::vector<double> vms = {0.0};
+  for (const auto v_mult : vms)
   {
-    //test(500, np, "out_mdiff_cdt");
-    //test(0, np, "out_iles_cdt");
-    //test(500, np, "out_pdiff_cdt5");
-    //test(500, np, "out_pdiff_vdt9");
-    //test(0, np, "out_iles_cdt10_wojtek");
-    //test<false>(500, np, "out_pdiff_vdt8_cmpct");
-    //test<true>(500, np, "out_pdiff_cdt5_simple");
-    //test<true>(500, np, "out_pdiff_vdt97_simple");
-    //test<true>(500, np, "out_pdiff_cdt10_simple_rfrc");
-    //test<false>(500, np, "out_piotr_cdt5_noprec_upw");
-    //test<false>(500, np, "out_piotr_cdt5_fixes");
-    test<false>(500, np, "out_phd_vdt80_Mg3No_diff");
+    std::vector<int> nps = {168 * 2}; 
+    //std::vector<int> nps = {168 / 4, 168 / 2, 168, 168 * 2};
+    for (const auto np : nps)
+    {
+      std::string suffix;
+      if (v_mult == 0.)
+      {
+        suffix = "_conservation_iles";
+      }
+      else
+      {
+        suffix = "_diff" + std::to_string(v_mult);
+      }
+      {
+        enum { opts = opts::nug | opts::iga | opts::fct};
+        test<false, opts>(v_mult, np, "out_obrona_vdt80_Mg2No" + suffix);
+      }
+      //{
+      //  enum { opts = opts::nug | opts::iga | opts::tot | opts::fct};
+      //  test<false, opts>(500, np, "out_phd_vdt80_Mg3ccNo_iles");
+      //}
+      {
+        enum { opts = opts::nug | opts::iga | opts::div_2nd | opts::div_3rd | opts::fct};
+        test<false, opts>(v_mult, np, "out_obrona_vdt80_Mg3No" + suffix);
+      }
+    }
   }
 }

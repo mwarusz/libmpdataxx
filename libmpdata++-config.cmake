@@ -40,7 +40,7 @@ if(
   CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR
   CMAKE_CXX_COMPILER_ID STREQUAL "Intel"
 )
-  set(libmpdataxx_CXX_FLAGS_RELEASE "${libmpdataxx_CXX_FLAGS_RELEASE} -std=c++14 -DNDEBUG -Ofast -march=native")
+  set(libmpdataxx_CXX_FLAGS_RELEASE "${libmpdataxx_CXX_FLAGS_RELEASE} -std=c++14 -DNDEBUG -O3 -march=native")
 
   # preventing Kahan summation from being optimised out
   if (

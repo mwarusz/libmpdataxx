@@ -24,7 +24,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   // member fields
   using ix = typename ct_params_t::ix;
   std::ofstream humanstat_file, compstat_file;
-  real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps, initial_totalws;
+  real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps, initial_totalws, v_mult;
 
   std::string name;
   typename parent_t::arr_t &tht_b, &tht_e, &pk_e, &qv_e, &tmp1, &tmp2, &u_e, &dtht_e, &qr_est, &col_sed;
@@ -231,23 +231,26 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     auto &qv = this->state(ix::qv);
     auto &qc = this->state(ix::qc);
     auto &qr = this->state(ix::qr);
+
+    auto v_mom = v_mult * 500.;
+    auto v_sclr = v_mult * 1500.;
    
     tmp1(this->ijk) = u(this->ijk) - u_e(this->ijk);
-    this->rhs.at(ix::u)(this->ijk) += 2.0 * vlap_cmpct(tmp1, 500., this->ijk, ijkm, this->dijk);
-    this->rhs.at(ix::v)(this->ijk) += 2.0 * vlap_cmpct(v, 500., this->ijk   , ijkm, this->dijk);
-    this->rhs.at(ix::w)(this->ijk) += 2.0 * vlap_cmpct(w, 500., this->ijk   , ijkm, this->dijk);
+    this->rhs.at(ix::u)(this->ijk) += 2.0 * vlap_cmpct(tmp1, v_mom, this->ijk, ijkm, this->dijk);
+    this->rhs.at(ix::v)(this->ijk) += 2.0 * vlap_cmpct(v, v_mom, this->ijk   , ijkm, this->dijk);
+    this->rhs.at(ix::w)(this->ijk) += 2.0 * vlap_cmpct(w, v_mom, this->ijk   , ijkm, this->dijk);
     
     tmp2(this->ijk) = qv(this->ijk) - qv_e(this->ijk);
     
-    tmp1(this->ijk) = 2.0 * vlap_cmpct(tht, 1500., this->ijk, ijkm, this->dijk);
+    tmp1(this->ijk) = 2.0 * vlap_cmpct(tht, v_sclr, this->ijk, ijkm, this->dijk);
     this->rhs.at(ix::tht)(this->ijk) += tmp1(this->ijk);
 
     // add diffusion force to full tht forcings
     this->rhs.at(ix::thf)(this->ijk) += tmp1(this->ijk);
 
-    this->rhs.at(ix::qv)(this->ijk)  += 2.0 * vlap_cmpct(tmp2, 1500., this->ijk, ijkm, this->dijk);
-    this->rhs.at(ix::qc)(this->ijk)  += 2.0 * vlap_cmpct(qc , 1500., this->ijk , ijkm, this->dijk);
-    this->rhs.at(ix::qr)(this->ijk)  += 2.0 * vlap_cmpct(qr , 1500., this->ijk , ijkm, this->dijk);
+    this->rhs.at(ix::qv)(this->ijk)  += 2.0 * vlap_cmpct(tmp2, v_sclr, this->ijk, ijkm, this->dijk);
+    this->rhs.at(ix::qc)(this->ijk)  += 2.0 * vlap_cmpct(qc , v_sclr, this->ijk , ijkm, this->dijk);
+    this->rhs.at(ix::qr)(this->ijk)  += 2.0 * vlap_cmpct(qr , v_sclr, this->ijk , ijkm, this->dijk);
   }
 
   template<typename tht_t>
@@ -315,18 +318,23 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     for (int k = this->k.first(); k <= this->k.last(); ++k)
     {
       // remove zeros
-      //qv(i, j, k) = std::max(0., qv(i, j, k));
-      //qc(i, j, k) = std::max(0., qc(i, j, k));
-      //qr(i, j, k) = std::max(0., qr(i, j, k));
+      if (v_mult == 0.)
+      {
+        qv(i, j, k) = std::max(0., qv(i, j, k));
+        qc(i, j, k) = std::max(0., qc(i, j, k));
+        qr(i, j, k) = std::max(0., qr(i, j, k));
+      }
 
       real_t k1 = 1e-3;
       real_t k2 = 2.2;
       real_t qct = 1e-3;
+      
+      real_t qrp = qr(i, j, k);
 
       real_t AP = std::max(0., k1 * (qc(i, j, k) - qct));
-      real_t CP = k2 * qc(i, j, k) * std::pow(qr(i, j, k), 0.875);
+      real_t CP = k2 * qc(i, j, k) * std::pow(qrp, 0.875);
       
-      real_t C = 1.6 + 124.9 * std::pow(1e-3 * rho(i, j, k) * qr(i, j, k), 0.2046);
+      real_t C = 1.6 + 124.9 * std::pow(1e-3 * rho(i, j, k) * qrp, 0.2046);
 
       real_t pk = pk_e(i, j, k);
       real_t p = pk2p(pk);
@@ -340,7 +348,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
       qvs = qv(i, j, k) / (1. + ss + 1e-16);
 
       real_t EP = 1./ rho(i, j, k) * ss * C *
-                  std::pow(1e-3 * rho(i, j, k) * qr(i, j, k), 0.525)
+                  std::pow(1e-3 * rho(i, j, k) * qrp, 0.525)
                   / 
                   (5.4e2 + 2.55e5 / (p * qvs));
 
@@ -377,10 +385,10 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
         real_t vr_kmh = -36.34 * rho_h * this->dt / this->dk * 
               std::pow(1e-3 * rho_h * qr_h, 0.1346) * std::pow(rho_h / rho_g, -0.5);
         
-        tmp1(i, j, lk)  = qr(i, j, lk) / (1 - vr_kmh / rho(i, j, lk));
+        //tmp1(i, j, lk)  = qr(i, j, lk) / (1 - vr_kmh / rho(i, j, lk));
        
         // no flux
-        //tmp1(i, j, lk)  = std::max(0., qr(i, j, lk)) / (1 + 2 *  vr_kmh / rho(i, j, lk));
+        tmp1(i, j, lk)  = std::max(0., qr(i, j, lk)) / (1 + 2 *  vr_kmh / rho(i, j, lk));
         
         this->rhs.at(ix::qr)(i, j, lk)  += (tmp1(i, j, lk) - qr(i, j, lk)) / this->dt;
         col_sed(i, j, 0) = 0.5 * rho(i, j, lk) * (tmp1(i, j, lk) - qr(i, j, lk));
@@ -406,10 +414,10 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
         }
         real_t vr_kph = vr_kmh;
           
-        tmp1(i, j, 0) = (qr(i, j, 0) - 1. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1)) / (1 - vr_kmh / rho(i, j, 0));
+        //tmp1(i, j, 0) = (qr(i, j, 0) - 1. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1)) / (1 - vr_kmh / rho(i, j, 0));
        
         // no flux
-        //tmp1(i, j, 0) = (qr(i, j, 0) - 2. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1));
+        tmp1(i, j, 0) = (qr(i, j, 0) - 2. / rho(i, j, 0) * vr_kph * tmp1(i, j, 1));
         
         this->rhs.at(ix::qr)(i, j, 0)  += (tmp1(i, j, 0) - qr(i, j, 0)) / this->dt;
         col_sed(i, j, 0) += 0.5 * rho(i, j, 0) * (tmp1(i, j, 0) - qr(i, j, 0));
@@ -634,8 +642,11 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
   {
     parent_t::hook_post_step();
     //this->mem->barrier();
-    
-    diffusion_cmpct();
+   
+    if (v_mult > 0)
+    {
+      diffusion_cmpct();
+    }
     
     this->state(ix::thf)(this->ijk) = this->state(ix::tht)(this->ijk) + tht_e(this->ijk);
     
@@ -646,7 +657,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
 
   struct rt_params_t : parent_t::rt_params_t 
   { 
-    real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps;
+    real_t g, cp, Rd, Rv, L, e0, epsa, T0, buoy_eps, v_mult;
     std::string name;
   };
 
@@ -665,6 +676,7 @@ class supercell : public libmpdataxx::solvers::mpdata_rhs_vip_prs_sgs<ct_params_
     epsa(p.epsa),
     T0(p.T0),
     buoy_eps(p.buoy_eps),
+    v_mult(p.v_mult),
     name(p.name),
     tht_b(args.mem->tmp[__FILE__][0][0]),
     tht_e(args.mem->tmp[__FILE__][1][0]),
